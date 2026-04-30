@@ -183,8 +183,11 @@
     display: grid;
     place-items: center;
     cursor: pointer;
-    transition: all 0.15s;
-    z-index: 4;
+    transition: background 0.15s, border-color 0.15s, color 0.15s, transform 0.15s;
+    /* Sit above the project row (z-index: 5) so its full hit-area is clickable.
+       Without this, the project row's invisible right edge captured hover/click
+       events on the bottom-left half of this button. */
+    z-index: 6;
   }
   .pip-btn:hover {
     background: var(--purple-soft);
