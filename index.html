@@ -1166,26 +1166,64 @@
     + '<path d="M256 220v76l50 50"/>'
     + '<path d="M204 80h104"/>'
     + '</g></svg>';
-  const iconUri = 'data:image/svg+xml;utf8,' + encodeURIComponent(ICON_SVG);
-  const manifest = {
-    name: 'Task Timer',
-    short_name: 'Task Timer',
-    description: 'A simple, beautiful time tracking app for your projects.',
-    start_url: '.',
-    scope: '.',
-    display: 'standalone',
-    background_color: '#1a1626',
-    theme_color: '#40e0d0',
-    icons: [
-      { src: iconUri, sizes: 'any', type: 'image/svg+xml', purpose: 'any' },
-      { src: iconUri, sizes: 'any', type: 'image/svg+xml', purpose: 'maskable' },
-    ],
-  };
-  const blob = new Blob([JSON.stringify(manifest)], { type: 'application/manifest+json' });
-  const link = document.createElement('link');
-  link.rel = 'manifest';
-  link.href = URL.createObjectURL(blob);
-  document.head.appendChild(link);
+  const svgUri = 'data:image/svg+xml;utf8,' + encodeURIComponent(ICON_SVG);
+
+  // Rasterize the SVG to PNG via canvas. macOS Chrome's PWA installer doesn't
+  // reliably bake SVG manifest icons into the .app bundle, so we provide PNGs
+  // for it to use directly.
+  function rasterize(size) {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      img.onload = function () {
+        const canvas = document.createElement('canvas');
+        canvas.width = size;
+        canvas.height = size;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, size, size);
+        try { resolve(canvas.toDataURL('image/png')); }
+        catch (e) { reject(e); }
+      };
+      img.onerror = function () { reject(new Error('SVG load failed')); };
+      img.src = svgUri;
+    });
+  }
+
+  function injectManifest(icons) {
+    const manifest = {
+      name: 'Task Timer',
+      short_name: 'Task Timer',
+      description: 'A simple, beautiful time tracking app for your projects.',
+      start_url: '.',
+      scope: '.',
+      display: 'standalone',
+      background_color: '#1a1626',
+      theme_color: '#40e0d0',
+      icons: icons,
+    };
+    const blob = new Blob([JSON.stringify(manifest)], { type: 'application/manifest+json' });
+    const link = document.createElement('link');
+    link.rel = 'manifest';
+    link.href = URL.createObjectURL(blob);
+    document.head.appendChild(link);
+  }
+
+  Promise.all([rasterize(192), rasterize(512)]).then(function (results) {
+    const png192 = results[0], png512 = results[1];
+    injectManifest([
+      { src: png192, sizes: '192x192', type: 'image/png', purpose: 'any' },
+      { src: png512, sizes: '512x512', type: 'image/png', purpose: 'any' },
+      { src: png512, sizes: '512x512', type: 'image/png', purpose: 'maskable' },
+      { src: svgUri, sizes: 'any', type: 'image/svg+xml', purpose: 'any' },
+    ]);
+  }).catch(function () {
+    // If rasterization fails for any reason (older browser, CORS quirk),
+    // fall back to the SVG-only manifest — at least it'll work for browsers
+    // that handle SVG icons cleanly.
+    injectManifest([
+      { src: svgUri, sizes: 'any', type: 'image/svg+xml', purpose: 'any' },
+      { src: svgUri, sizes: 'any', type: 'image/svg+xml', purpose: 'maskable' },
+    ]);
+  });
 })();
 
 // ---------- Storage ----------
