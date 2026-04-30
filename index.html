@@ -871,6 +871,116 @@
   }
   .toast-success { border-color: rgba(64, 224, 208, 0.5); color: var(--turquoise-glow); }
   .toast-error { border-color: rgba(248, 113, 113, 0.5); color: var(--danger); }
+  .toast-info { border-color: var(--border-strong); color: var(--gray-100); }
+
+  /* ---------- Session editor popover ---------- */
+  /* Click a session's project name to reassign it to a different project. */
+  .session-name-btn {
+    background: none;
+    border: none;
+    padding: 2px 6px;
+    margin: 0 -6px;
+    border-radius: 6px;
+    color: inherit;
+    font: inherit;
+    cursor: pointer;
+    text-align: left;
+    transition: background 0.12s, color 0.12s;
+  }
+  .session-name-btn:hover {
+    background: var(--purple-soft);
+    color: var(--purple-glow);
+  }
+  .session-name-btn:focus-visible {
+    outline: 1px solid var(--border-strong);
+    outline-offset: 1px;
+  }
+
+  .session-editor {
+    position: absolute;
+    z-index: 200;
+    background: var(--panel-solid);
+    border: 1px solid var(--border-strong);
+    border-radius: 14px;
+    padding: 12px;
+    width: 280px;
+    box-shadow: 0 16px 48px rgba(0, 0, 0, 0.5);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    font-family: var(--font-serif);
+    color: var(--gray-100);
+  }
+  .session-editor-label {
+    font-family: var(--font-display);
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.15em;
+    color: var(--gray-400);
+    margin-bottom: 8px;
+  }
+  .session-editor-input {
+    width: 100%;
+    padding: 8px 10px;
+    background: rgba(0, 0, 0, 0.25);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--gray-100);
+    font-family: var(--font-serif);
+    font-size: 15px;
+    margin-bottom: 8px;
+    outline: none;
+  }
+  .session-editor-input:focus {
+    border-color: var(--border-strong);
+  }
+  .session-editor-list {
+    max-height: 220px;
+    overflow-y: auto;
+  }
+  .session-editor-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 7px 8px;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 15px;
+    line-height: 1.2;
+  }
+  .session-editor-item:hover,
+  .session-editor-item.active {
+    background: var(--purple-soft);
+  }
+  .session-editor-item .dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+  .session-editor-item.current {
+    color: var(--gray-400);
+  }
+  .session-editor-item.current::after {
+    content: 'current';
+    margin-left: auto;
+    font-family: var(--font-display);
+    font-size: 9px;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    color: var(--gray-500);
+  }
+  .session-editor-item.create-new {
+    margin-top: 4px;
+    padding-top: 10px;
+    border-top: 1px solid var(--border);
+    color: var(--turquoise-glow);
+  }
+  .session-editor-empty {
+    padding: 8px 4px;
+    color: var(--gray-500);
+    font-size: 14px;
+    font-style: italic;
+  }
 
   /* ---------- Mini (Picture-in-Picture) view ---------- */
 
@@ -1233,6 +1343,7 @@ const STORAGE_KEY = 'task-timer-v1';
 const MAX_PROJECT_NAME_LEN = 200;
 const MAX_DURATION_MS = 24 * 60 * 60 * 1000; // 24h cap on a single timer
 const MIN_TIMER_MS = 1000;                    // 1s floor on a timer
+const MAX_SESSIONS = 5000;                    // hard cap on retained sessions
 
 // Generate a collision-resistant session ID. Prefer crypto.randomUUID (universal
 // in modern browsers); fall back to a longer random string if unavailable.
@@ -1403,7 +1514,23 @@ function defaultState() {
   };
 }
 
+let prunedNotified = false;
+function pruneSessionsIfNeeded() {
+  if (state.sessions.length <= MAX_SESSIONS) return;
+  // Sort newest-first then truncate. The post-cap order doesn't matter for
+  // rendering (renderSessions groups by day and re-sorts within each day).
+  state.sessions.sort((a, b) => b.startMs - a.startMs);
+  const removed = state.sessions.length - MAX_SESSIONS;
+  state.sessions.length = MAX_SESSIONS;
+  if (!prunedNotified) {
+    prunedNotified = true;
+    notice('Trimmed ' + removed + ' oldest session' + (removed === 1 ? '' : 's')
+      + ' to keep storage within limits. Export a backup if you want to keep complete history.', 'info');
+  }
+}
+
 function saveState() {
+  pruneSessionsIfNeeded();
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
   } catch (e) {
@@ -1625,6 +1752,40 @@ function playChime() {
   playChimeOption(state.chime || 'cathedral');
 }
 
+// ---------- System notifications (timer completion when tab is hidden) ----------
+let notificationPermissionAsked = false;
+function maybeRequestNotificationPermission() {
+  if (typeof Notification === 'undefined') return;
+  if (Notification.permission !== 'default') return;
+  if (notificationPermissionAsked) return;
+  notificationPermissionAsked = true;
+  // requestPermission must be called from a user gesture in some browsers;
+  // startTimer is invoked from a click/keydown so this is fine.
+  try {
+    const result = Notification.requestPermission();
+    if (result && typeof result.then === 'function') {
+      result.catch(() => {}); // swallow rejection — user just denied
+    }
+  } catch (e) { /* older browsers may throw */ }
+}
+function tryNotifyTimerComplete(session) {
+  if (typeof Notification === 'undefined') return;
+  if (Notification.permission !== 'granted') return;
+  // Only disturb the user when they're not actively looking at the tab.
+  if (!document.hidden) return;
+  try {
+    const n = new Notification('Timer complete', {
+      body: session.project + ' — ' + formatDurationShort(session.durationMs),
+      tag: 'task-timer-complete',
+      silent: false,
+    });
+    // Clicking the notification refocuses the tab.
+    n.onclick = () => { try { window.focus(); n.close(); } catch (_) {} };
+  } catch (e) {
+    console.warn('Notification failed', e);
+  }
+}
+
 // ---------- Mode switching ----------
 function setMode(mode, opts) {
   if (mode !== 'stopwatch' && mode !== 'timer') return;
@@ -1677,6 +1838,36 @@ window.addEventListener('pointerup', (e) => {
 
 // ---------- Timer engine ----------
 let tickHandle = null;
+// Separate from tickHandle: a one-shot setTimeout aligned to the timer's exact
+// expiry moment. The 250ms tick can be throttled to 1Hz (or paused) when the
+// tab is in the background, so without this the chime can fire many seconds
+// late. setTimeout in background tabs is also throttled, but far less so —
+// good enough that the chime lands within a second or two of the deadline,
+// and we additionally show a system Notification when the tab is hidden.
+let timerExpiryHandle = null;
+
+function clearTimerExpiry() {
+  if (timerExpiryHandle) {
+    clearTimeout(timerExpiryHandle);
+    timerExpiryHandle = null;
+  }
+}
+function scheduleTimerExpiry() {
+  clearTimerExpiry();
+  const sess = state.currentSession;
+  if (!sess || sess.mode !== 'timer') return;
+  const remaining = sess.durationMs - (Date.now() - sess.startMs);
+  if (remaining <= 0) return;
+  const targetStartMs = sess.startMs;
+  timerExpiryHandle = setTimeout(() => {
+    timerExpiryHandle = null;
+    // Only fire if the timer is still the same one we scheduled for.
+    const cur = state.currentSession;
+    if (cur && cur.mode === 'timer' && cur.startMs === targetStartMs) {
+      stopCurrent({ completed: true, endMs: cur.startMs + cur.durationMs });
+    }
+  }, Math.max(0, remaining));
+}
 
 function isRunning() { return !!state.currentSession; }
 function isRunningInMode(mode) { return state.currentSession && state.currentSession.mode === mode; }
@@ -1753,7 +1944,15 @@ function maybeSplitAtMidnight() {
     }
     didSplit = true;
   }
-  if (didSplit) saveState();
+  if (didSplit) {
+    saveState();
+    // Re-anchor any pending timer-expiry setTimeout to the new startMs.
+    if (state.currentSession && state.currentSession.mode === 'timer') {
+      scheduleTimerExpiry();
+    } else {
+      clearTimerExpiry();
+    }
+  }
   return didSplit;
 }
 
@@ -1785,12 +1984,16 @@ function startTimer(projectName, durationMs) {
   els.projectInput.value = canonical;
   hideSuggestions();
   startTick();
+  scheduleTimerExpiry();
+  maybeRequestNotificationPermission();
   render();
 }
 
 function stopCurrent(opts) {
   if (!state.currentSession) return;
-  const { project, startMs, mode, durationMs } = state.currentSession;
+  const sess = state.currentSession;
+  const { project, startMs, mode, durationMs } = sess;
+  clearTimerExpiry();
   const endMs = (opts && opts.endMs) || Date.now();
   let recorded = endMs - startMs;
   // For timer mode, when it auto-completes, record the full duration target.
@@ -1811,7 +2014,10 @@ function stopCurrent(opts) {
   state.currentSession = null;
   saveState();
   stopTick();
-  if (opts && opts.completed) playChime();
+  if (opts && opts.completed) {
+    playChime();
+    tryNotifyTimerComplete(sess);
+  }
   render();
 }
 
@@ -2362,7 +2568,7 @@ function renderSessions() {
       html += `<div class="session-row">
         <span class="dot" style="background:${colorFor(s.project)}"></span>
         <span class="mode-icon" title="${s.mode}">${icon}</span>
-        <span class="name">${escapeHtml(s.project)}</span>
+        <button class="session-name-btn name" data-edit-session="${escapeHtml(s.id)}" title="Click to reassign to a different project">${escapeHtml(s.project)}</button>
         <span class="time">${formatClock(s.startMs)}</span>
         <span class="duration">${formatDurationShort(s.duration)}</span>
         <button class="delete-x" data-delete-session="${escapeHtml(s.id)}" title="Delete session">×</button>
@@ -2520,17 +2726,170 @@ els.projectList.addEventListener('click', (e) => {
   }
 });
 
-// Delete sessions
+// Session row click handler — either delete the session or open the
+// project-reassignment popover, depending on which inner button was hit.
 els.sessionList.addEventListener('click', (e) => {
   const del = e.target.closest('[data-delete-session]');
-  if (!del) return;
-  const id = del.dataset.deleteSession;
-  if (confirm('Delete this session?')) {
-    state.sessions = state.sessions.filter(s => s.id !== id);
-    saveState();
-    render();
+  if (del) {
+    const id = del.dataset.deleteSession;
+    if (confirm('Delete this session?')) {
+      state.sessions = state.sessions.filter(s => s.id !== id);
+      saveState();
+      render();
+    }
+    return;
+  }
+  const edit = e.target.closest('[data-edit-session]');
+  if (edit) {
+    const id = edit.dataset.editSession;
+    const session = state.sessions.find(s => s.id === id);
+    if (session) openSessionEditor(session, edit);
   }
 });
+
+// ---------- Session editor popover ----------
+// Lets the user retroactively reassign a recorded session to a different
+// project (e.g., started a "Email" timer but actually worked on "Slack").
+let sessionEditor = null;
+let sessionEditorTarget = null; // { kind: 'session'|'current', id }
+
+function closeSessionEditor() {
+  if (!sessionEditor) return;
+  sessionEditor.remove();
+  sessionEditor = null;
+  sessionEditorTarget = null;
+  document.removeEventListener('mousedown', onClickOutsideEditor, true);
+  window.removeEventListener('resize', closeSessionEditor);
+  window.removeEventListener('scroll', closeSessionEditor, true);
+}
+
+function onClickOutsideEditor(e) {
+  if (sessionEditor && !sessionEditor.contains(e.target)) closeSessionEditor();
+}
+
+function positionEditor(popover, anchorEl) {
+  const rect = anchorEl.getBoundingClientRect();
+  // Default: place below the anchor, left-aligned. Flip to above if it would
+  // run off the bottom of the viewport.
+  const popH = 280; // approximate; CSS bounds it
+  const popW = 280;
+  let top = rect.bottom + window.scrollY + 6;
+  let left = rect.left + window.scrollX;
+  if (rect.bottom + popH > window.innerHeight && rect.top > popH) {
+    top = rect.top + window.scrollY - popH - 6;
+  }
+  // Keep it on-screen horizontally.
+  const maxLeft = window.scrollX + window.innerWidth - popW - 12;
+  if (left > maxLeft) left = maxLeft;
+  if (left < window.scrollX + 8) left = window.scrollX + 8;
+  popover.style.top = top + 'px';
+  popover.style.left = left + 'px';
+}
+
+function openSessionEditor(session, anchorEl) {
+  closeSessionEditor();
+  sessionEditorTarget = { kind: 'session', id: session.id };
+
+  const popover = document.createElement('div');
+  popover.className = 'session-editor';
+  popover.innerHTML =
+    '<div class="session-editor-label">Reassign project</div>'
+    + '<input type="text" class="session-editor-input" placeholder="Search or type a new name" autocomplete="off" spellcheck="false">'
+    + '<div class="session-editor-list"></div>';
+  document.body.appendChild(popover);
+  sessionEditor = popover;
+  positionEditor(popover, anchorEl);
+
+  const input = popover.querySelector('.session-editor-input');
+  const list = popover.querySelector('.session-editor-list');
+  let activeIndex = 0;
+  let visibleItems = []; // [{ name, type: 'existing' | 'create' }]
+
+  function renderList() {
+    const q = input.value.trim().toLowerCase();
+    const matches = state.projects
+      .filter(p => p.toLowerCase().includes(q))
+      .sort((a, b) => totalsForProject(b).allTime - totalsForProject(a).allTime)
+      .slice(0, 30);
+    visibleItems = matches.map(name => ({ name, type: 'existing' }));
+    if (q && !matches.some(p => p.toLowerCase() === q)) {
+      visibleItems.push({ name: input.value.trim(), type: 'create' });
+    }
+    if (visibleItems.length === 0) {
+      list.innerHTML = '<div class="session-editor-empty">No projects yet. Type a name to create one.</div>';
+      activeIndex = -1;
+      return;
+    }
+    if (activeIndex >= visibleItems.length) activeIndex = 0;
+    list.innerHTML = visibleItems.map((it, i) => {
+      const isCurrent = it.type === 'existing' && it.name === session.project;
+      if (it.type === 'create') {
+        return '<div class="session-editor-item create-new ' + (i === activeIndex ? 'active' : '') + '" data-index="' + i + '">'
+          + '<span class="dot" style="background:' + colorFor(it.name) + '"></span>'
+          + 'Create &ldquo;' + escapeHtml(it.name) + '&rdquo;'
+          + '</div>';
+      }
+      return '<div class="session-editor-item ' + (isCurrent ? 'current' : '') + ' ' + (i === activeIndex ? 'active' : '') + '" data-index="' + i + '">'
+        + '<span class="dot" style="background:' + colorFor(it.name) + '"></span>'
+        + escapeHtml(it.name)
+        + '</div>';
+    }).join('');
+  }
+
+  function pickIndex(i) {
+    const it = visibleItems[i];
+    if (!it) return;
+    commitProjectChange(session.id, it.name);
+  }
+
+  renderList();
+  setTimeout(() => input.focus(), 0);
+
+  input.addEventListener('input', () => { activeIndex = 0; renderList(); });
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'ArrowDown') { e.preventDefault(); if (visibleItems.length) { activeIndex = (activeIndex + 1) % visibleItems.length; renderList(); } }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); if (visibleItems.length) { activeIndex = (activeIndex - 1 + visibleItems.length) % visibleItems.length; renderList(); } }
+    else if (e.key === 'Enter') { e.preventDefault(); if (activeIndex >= 0) pickIndex(activeIndex); }
+    else if (e.key === 'Escape') { e.preventDefault(); closeSessionEditor(); }
+  });
+  list.addEventListener('mousedown', (e) => {
+    const item = e.target.closest('.session-editor-item');
+    if (!item) return;
+    e.preventDefault(); // keep focus on input
+    const i = Number(item.dataset.index);
+    pickIndex(i);
+  });
+
+  // Close when clicking outside, scrolling, or resizing.
+  setTimeout(() => {
+    document.addEventListener('mousedown', onClickOutsideEditor, true);
+    window.addEventListener('resize', closeSessionEditor);
+    window.addEventListener('scroll', closeSessionEditor, true);
+  }, 0);
+}
+
+function commitProjectChange(sessionId, newProjectName) {
+  const canonical = addOrFindProject(newProjectName);
+  if (!canonical) {
+    if (sessionEditor) {
+      const input = sessionEditor.querySelector('.session-editor-input');
+      if (input) {
+        input.style.borderColor = 'var(--danger)';
+        setTimeout(() => { input.style.borderColor = ''; }, 600);
+      }
+    }
+    return;
+  }
+  const session = state.sessions.find(s => s.id === sessionId);
+  if (!session) { closeSessionEditor(); return; }
+  if (session.project === canonical) { closeSessionEditor(); return; }
+  const prev = session.project;
+  session.project = canonical;
+  saveState();
+  closeSessionEditor();
+  render();
+  showToast('Reassigned to "' + canonical + '" (was "' + prev + '")', 'success');
+}
 
 // Global shortcuts
 document.addEventListener('keydown', (e) => {
@@ -2576,7 +2935,10 @@ els.modeTabs.forEach(t => t.classList.toggle('active', t.dataset.mode === state.
 void els.modeTrack.offsetWidth;
 requestAnimationFrame(() => els.modeTrack.classList.remove('no-anim'));
 
-if (state.currentSession) startTick();
+if (state.currentSession) {
+  startTick();
+  scheduleTimerExpiry();
+}
 if (state.lastProject) els.projectInput.value = state.lastProject;
 render();
 updateTimerDisplay();
@@ -2597,10 +2959,41 @@ window.addEventListener('beforeunload', (e) => {
 
 document.addEventListener('visibilitychange', () => {
   // Keep ticking if the floating mini window is open — otherwise it'd freeze.
-  if (document.hidden && !pipWindow) stopTick();
-  else if (state.currentSession) startTick();
+  if (document.hidden && !pipWindow) {
+    stopTick();
+  } else if (state.currentSession) {
+    startTick();
+    // Wake the audio context so the chime works if a timer expires while
+    // the user is actively in the tab.
+    ensureAudio();
+    // The setTimeout-based timer-expiry is more reliable than the tick when
+    // hidden, but if the tab was suspended long enough that we missed the
+    // deadline, force a catch-up: updateTimerDisplay handles the auto-complete.
+    if (state.currentSession.mode === 'timer') {
+      const remaining = state.currentSession.durationMs - (Date.now() - state.currentSession.startMs);
+      if (remaining <= 0) updateTimerDisplay();
+    }
+    // Re-anchor the expiry timeout in case the previous one was dropped.
+    scheduleTimerExpiry();
+  }
   render();
 });
+
+// On a fresh page load with a session already in progress, the AudioContext
+// can't be created until the user has interacted. Wake it on the first click
+// or keystroke so the chime works on auto-completion without an explicit
+// "Resume" step.
+if (state.currentSession) {
+  const wakeAudio = () => {
+    ensureAudio();
+    document.removeEventListener('pointerdown', wakeAudio, true);
+    document.removeEventListener('keydown', wakeAudio, true);
+    document.removeEventListener('touchstart', wakeAudio, true);
+  };
+  document.addEventListener('pointerdown', wakeAudio, true);
+  document.addEventListener('keydown', wakeAudio, true);
+  document.addEventListener('touchstart', wakeAudio, true);
+}
 </script>
 </body>
 </html>
