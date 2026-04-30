@@ -1,0 +1,2332 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Task Timer</title>
+<meta name="description" content="A simple, beautiful time tracking app for your projects.">
+<meta name="theme-color" content="#1a1626">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Task Timer">
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'><defs><linearGradient id='g' x1='0' y1='0' x2='1' y2='1'><stop offset='0' stop-color='%2340e0d0'/><stop offset='1' stop-color='%23a78bfa'/></linearGradient></defs><rect width='512' height='512' rx='96' fill='url(%23g)'/><g fill='none' stroke='%23fff' stroke-width='36' stroke-linecap='round' stroke-linejoin='round'><circle cx='256' cy='296' r='152'/><path d='M256 220v76l50 50'/><path d='M204 80h104'/></g></svg>">
+<link rel="apple-touch-icon" href="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'><defs><linearGradient id='g' x1='0' y1='0' x2='1' y2='1'><stop offset='0' stop-color='%2340e0d0'/><stop offset='1' stop-color='%23a78bfa'/></linearGradient></defs><rect width='512' height='512' rx='96' fill='url(%23g)'/><g fill='none' stroke='%23fff' stroke-width='36' stroke-linecap='round' stroke-linejoin='round'><circle cx='256' cy='296' r='152'/><path d='M256 220v76l50 50'/><path d='M204 80h104'/></g></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=EB+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,400&family=Josefin+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg-grad-1: #1a1626;
+    --bg-grad-2: #221d35;
+    --bg-grad-3: #1c1929;
+    --panel: rgba(40, 35, 60, 0.55);
+    --panel-solid: #28233c;
+    --panel-hover: rgba(50, 44, 72, 0.7);
+    --turquoise: #40e0d0;
+    --turquoise-glow: #5eead4;
+    --turquoise-deep: #0d9488;
+    --turquoise-soft: rgba(64, 224, 208, 0.12);
+    --purple: #a78bfa;
+    --purple-deep: #7c3aed;
+    --purple-soft: rgba(167, 139, 250, 0.15);
+    --purple-glow: #c4b5fd;
+    --gray-100: #f1f5f9;
+    --gray-300: #cbd5e1;
+    --gray-400: #94a3b8;
+    --gray-500: #64748b;
+    --gray-600: #475569;
+    --gray-700: #334155;
+    --border: rgba(167, 139, 250, 0.18);
+    --border-strong: rgba(167, 139, 250, 0.35);
+    --danger: #f87171;
+
+    --font-serif: 'EB Garamond', 'Garamond', 'Georgia', serif;
+    --font-display: 'Josefin Sans', -apple-system, 'Segoe UI', sans-serif;
+    --font-mono: 'SF Mono', 'Monaco', 'Menlo', 'Consolas', monospace;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  html, body {
+    background: linear-gradient(135deg, var(--bg-grad-1) 0%, var(--bg-grad-2) 50%, var(--bg-grad-3) 100%);
+    background-attachment: fixed;
+    color: var(--gray-100);
+    font-family: var(--font-serif);
+    font-size: 17px;
+    min-height: 100vh;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  body {
+    padding: 32px 24px 64px;
+    max-width: 1100px;
+    margin: 0 auto;
+  }
+
+  body::before {
+    content: '';
+    position: fixed;
+    top: -200px;
+    left: -200px;
+    width: 500px;
+    height: 500px;
+    background: radial-gradient(circle, rgba(64, 224, 208, 0.15) 0%, transparent 70%);
+    pointer-events: none;
+    z-index: 0;
+  }
+  body::after {
+    content: '';
+    position: fixed;
+    bottom: -200px;
+    right: -200px;
+    width: 600px;
+    height: 600px;
+    background: radial-gradient(circle, rgba(167, 139, 250, 0.18) 0%, transparent 70%);
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  .app { position: relative; z-index: 1; }
+
+  /* All-caps helper class for Josefin Sans */
+  .caps {
+    font-family: var(--font-display);
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    font-weight: 500;
+  }
+
+  header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 28px;
+  }
+  .brand {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+  }
+  .brand-mark {
+    width: 42px;
+    height: 42px;
+    border-radius: 12px;
+    background: linear-gradient(135deg, var(--turquoise) 0%, var(--purple) 100%);
+    display: grid;
+    place-items: center;
+    box-shadow: 0 4px 18px rgba(124, 58, 237, 0.35);
+  }
+  .brand-mark svg { width: 22px; height: 22px; color: #fff; }
+  .brand h1 {
+    font-family: var(--font-display);
+    font-size: 22px;
+    font-weight: 600;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    background: linear-gradient(90deg, var(--turquoise-glow), var(--purple-glow));
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+  .header-stats {
+    display: flex;
+    gap: 24px;
+    font-family: var(--font-display);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.15em;
+    color: var(--gray-400);
+    font-weight: 400;
+  }
+  .header-stats > div {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 4px;
+  }
+  .header-stats strong {
+    font-family: var(--font-serif);
+    font-size: 18px;
+    color: var(--gray-100);
+    font-weight: 500;
+    letter-spacing: 0;
+    text-transform: none;
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* Timer card */
+  .timer-card {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 24px;
+    padding: 32px 32px 28px;
+    backdrop-filter: blur(18px);
+    -webkit-backdrop-filter: blur(18px);
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.25);
+    margin-bottom: 28px;
+    text-align: center;
+    position: relative;
+    overflow: hidden;
+  }
+
+  /* Pop-out button (top-right of timer card) */
+  .pip-btn {
+    position: absolute;
+    top: 18px;
+    right: 18px;
+    width: 36px;
+    height: 36px;
+    background: rgba(167, 139, 250, 0.10);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    color: var(--purple-glow);
+    display: grid;
+    place-items: center;
+    cursor: pointer;
+    transition: all 0.15s;
+    z-index: 4;
+  }
+  .pip-btn:hover {
+    background: var(--purple-soft);
+    border-color: var(--border-strong);
+    color: var(--gray-100);
+    transform: translateY(-1px);
+  }
+  .pip-btn svg { width: 15px; height: 15px; }
+  .pip-btn.active {
+    background: rgba(64, 224, 208, 0.15);
+    border-color: rgba(64, 224, 208, 0.4);
+    color: var(--turquoise-glow);
+  }
+  .timer-card::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: radial-gradient(circle at 50% 0%, rgba(64, 224, 208, 0.08), transparent 60%);
+    pointer-events: none;
+  }
+
+  /* Project input */
+  .project-row {
+    position: relative;
+    margin-bottom: 22px;
+    z-index: 5;
+  }
+  .project-input {
+    width: 100%;
+    max-width: 460px;
+    padding: 13px 18px;
+    background: rgba(20, 18, 30, 0.5);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    color: var(--gray-100);
+    font-size: 17px;
+    font-family: var(--font-serif);
+    text-align: center;
+    transition: all 0.2s;
+    outline: none;
+  }
+  .project-input::placeholder { color: var(--gray-500); font-style: italic; }
+  .project-input:focus {
+    border-color: var(--turquoise);
+    box-shadow: 0 0 0 4px rgba(64, 224, 208, 0.12);
+    background: rgba(20, 18, 30, 0.7);
+  }
+  .project-suggestions {
+    position: absolute;
+    top: calc(100% + 6px);
+    left: 50%;
+    transform: translateX(-50%);
+    width: 100%;
+    max-width: 460px;
+    background: var(--panel-solid);
+    border: 1px solid var(--border-strong);
+    border-radius: 14px;
+    padding: 6px;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.4);
+    max-height: 240px;
+    overflow-y: auto;
+    z-index: 30;
+    display: none;
+    text-align: left;
+  }
+  .project-suggestions.visible { display: block; }
+  .suggestion {
+    padding: 10px 14px;
+    border-radius: 9px;
+    cursor: pointer;
+    font-size: 16px;
+    color: var(--gray-100);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    transition: background 0.12s;
+  }
+  .suggestion:hover, .suggestion.active { background: var(--purple-soft); }
+  .suggestion .dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+  .suggestion-label { display: flex; align-items: center; gap: 10px; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .suggestion-meta { font-family: var(--font-display); font-size: 11px; text-transform: uppercase; letter-spacing: 0.1em; color: var(--gray-400); flex-shrink: 0; }
+  .suggestion.create-new { color: var(--turquoise-glow); font-style: italic; }
+  .suggestion.create-new .icon { font-size: 18px; line-height: 1; font-style: normal; }
+
+  /* Mode tabs */
+  .mode-tabs {
+    display: inline-flex;
+    background: rgba(20, 18, 30, 0.5);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 4px;
+    margin-bottom: 24px;
+    position: relative;
+    z-index: 2;
+    gap: 2px;
+  }
+  .mode-tab {
+    background: none;
+    border: none;
+    color: var(--gray-400);
+    font-family: var(--font-display);
+    text-transform: uppercase;
+    letter-spacing: 0.16em;
+    text-indent: 0.16em; /* compensate for trailing letter-spacing so text sits visually centered */
+    font-size: 12px;
+    font-weight: 500;
+    line-height: 1;
+    padding: 12px 26px 9px;
+    border-radius: 999px;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  .mode-tab:hover { color: var(--gray-100); }
+  .mode-tab.active {
+    background: linear-gradient(135deg, rgba(64, 224, 208, 0.18) 0%, rgba(167, 139, 250, 0.18) 100%);
+    color: var(--gray-100);
+    box-shadow: inset 0 0 0 1px var(--border-strong);
+  }
+
+  /* Mode viewport (swipeable) */
+  .mode-viewport {
+    overflow: hidden;
+    width: 100%;
+    position: relative;
+    z-index: 2;
+    touch-action: pan-y;
+  }
+  .mode-track {
+    display: flex;
+    width: 200%;
+    transition: transform 0.35s cubic-bezier(0.22, 0.61, 0.36, 1);
+  }
+  .mode-track.no-anim { transition: none; }
+  .mode-track[data-mode="stopwatch"] { transform: translateX(0); }
+  .mode-track[data-mode="timer"] { transform: translateX(-50%); }
+  .mode-view {
+    width: 50%;
+    flex-shrink: 0;
+    padding: 4px 8px 0;
+  }
+
+  /* Timer display (shared style) */
+  .timer-display {
+    font-family: var(--font-serif);
+    font-size: clamp(72px, 13vw, 132px);
+    font-weight: 400;
+    letter-spacing: 0.01em;
+    line-height: 1;
+    background: linear-gradient(180deg, var(--gray-100) 0%, var(--gray-300) 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    margin: 8px 0 6px;
+    transition: all 0.3s;
+    font-variant-numeric: tabular-nums;
+    user-select: none;
+  }
+  .timer-display.running {
+    background: linear-gradient(180deg, var(--turquoise-glow) 0%, var(--turquoise) 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    text-shadow: 0 0 40px rgba(64, 224, 208, 0.2);
+  }
+  .timer-display.warn {
+    background: linear-gradient(180deg, #fbbf24 0%, #f59e0b 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+
+  /* Editable time input (timer mode, idle) */
+  .timer-edit {
+    display: inline-flex;
+    align-items: baseline;
+    justify-content: center;
+    margin: 8px 0 6px;
+    font-variant-numeric: tabular-nums;
+    user-select: none;
+  }
+  .timer-segment {
+    background: transparent;
+    border: none;
+    color: var(--gray-100);
+    font-family: var(--font-serif);
+    font-size: clamp(72px, 13vw, 132px);
+    font-weight: 400;
+    width: 1.7em;
+    text-align: center;
+    padding: 0;
+    outline: none;
+    border-radius: 10px;
+    transition: background 0.15s, color 0.15s;
+    -moz-appearance: textfield;
+    line-height: 1;
+  }
+  .timer-segment::-webkit-outer-spin-button,
+  .timer-segment::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
+  .timer-segment:hover { background: rgba(167, 139, 250, 0.08); color: var(--purple-glow); }
+  .timer-segment:focus { background: rgba(64, 224, 208, 0.10); color: var(--turquoise-glow); }
+  .timer-segment.empty { color: var(--gray-600); }
+  .timer-colon {
+    font-family: var(--font-serif);
+    font-size: clamp(72px, 13vw, 132px);
+    font-weight: 400;
+    color: var(--gray-500);
+    line-height: 1;
+    padding: 0 2px;
+  }
+
+  .timer-status {
+    color: var(--gray-400);
+    font-size: 16px;
+    margin-bottom: 22px;
+    min-height: 22px;
+    font-style: italic;
+  }
+  .timer-status.normal { font-style: normal; }
+  .timer-status .pulse {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--turquoise);
+    box-shadow: 0 0 12px var(--turquoise);
+    margin-right: 8px;
+    vertical-align: middle;
+    animation: pulse 1.6s ease-in-out infinite;
+  }
+  .timer-status .running-project {
+    font-family: var(--font-display);
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    font-size: 13px;
+    color: var(--turquoise-glow);
+    margin-left: 4px;
+    font-weight: 500;
+    font-style: normal;
+  }
+  @keyframes pulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.4; transform: scale(0.8); }
+  }
+
+  /* Preset buttons (timer mode) */
+  .presets {
+    display: flex;
+    justify-content: center;
+    gap: 8px;
+    margin-bottom: 22px;
+    flex-wrap: wrap;
+  }
+  .preset-btn {
+    background: rgba(20, 18, 30, 0.5);
+    border: 1px solid var(--border);
+    color: var(--gray-300);
+    font-family: var(--font-display);
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    text-indent: 0.12em;
+    font-size: 12px;
+    font-weight: 500;
+    line-height: 1;
+    padding: 11px 18px 8px;
+    border-radius: 999px;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .preset-btn:hover {
+    border-color: var(--border-strong);
+    color: var(--gray-100);
+    background: rgba(167, 139, 250, 0.10);
+  }
+  .preset-btn.active {
+    background: var(--purple-soft);
+    border-color: var(--border-strong);
+    color: var(--purple-glow);
+  }
+
+  /* Start button */
+  .start-btn {
+    background: linear-gradient(135deg, var(--turquoise) 0%, var(--turquoise-deep) 100%);
+    color: #0f172a;
+    border: none;
+    padding: 20px 56px 16px;
+    border-radius: 999px;
+    font-family: var(--font-display);
+    font-size: 16px;
+    font-weight: 700;
+    line-height: 1;
+    letter-spacing: 0.18em;
+    text-indent: 0.18em; /* compensate for trailing letter-spacing so text sits visually centered */
+    cursor: pointer;
+    transition: all 0.2s;
+    box-shadow: 0 8px 24px rgba(64, 224, 208, 0.35);
+    text-transform: uppercase;
+  }
+  .start-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 12px 32px rgba(64, 224, 208, 0.5);
+  }
+  .start-btn:active { transform: translateY(0); }
+  .start-btn:disabled {
+    background: var(--gray-700);
+    color: var(--gray-500);
+    cursor: not-allowed;
+    box-shadow: none;
+    transform: none;
+  }
+  .start-btn.stop {
+    background: linear-gradient(135deg, var(--purple) 0%, var(--purple-deep) 100%);
+    color: #fff;
+    box-shadow: 0 8px 24px rgba(167, 139, 250, 0.4);
+  }
+  .start-btn.stop:hover { box-shadow: 0 12px 32px rgba(167, 139, 250, 0.55); }
+
+  /* Other-mode busy banner */
+  .busy-banner {
+    margin-bottom: 16px;
+    padding: 14px 18px;
+    background: rgba(64, 224, 208, 0.08);
+    border: 1px solid rgba(64, 224, 208, 0.25);
+    border-radius: 12px;
+    color: var(--turquoise-glow);
+    font-style: italic;
+    font-size: 15px;
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+  .busy-banner:hover { background: rgba(64, 224, 208, 0.14); }
+  .busy-banner span { font-style: normal; }
+
+  .shortcut-hint {
+    margin-top: 16px;
+    font-family: var(--font-display);
+    text-transform: uppercase;
+    letter-spacing: 0.14em;
+    font-size: 10px;
+    color: var(--gray-500);
+    font-weight: 400;
+  }
+  kbd {
+    display: inline-block;
+    padding: 2px 8px;
+    background: rgba(167, 139, 250, 0.15);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    font-family: var(--font-mono);
+    font-size: 10px;
+    color: var(--purple-glow);
+    margin: 0 2px;
+    text-transform: none;
+    letter-spacing: 0;
+  }
+
+  /* Grid */
+  .grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 22px;
+  }
+  @media (max-width: 760px) {
+    .grid { grid-template-columns: 1fr; }
+    body { padding: 20px 14px 48px; }
+    .timer-card { padding: 22px 16px 22px; }
+    .header-stats { display: none; }
+  }
+
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 18px;
+    padding: 22px;
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+  }
+  .panel-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 16px;
+  }
+  .panel-title {
+    font-family: var(--font-display);
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.18em;
+    color: var(--gray-300);
+  }
+  .panel-subtitle {
+    font-family: var(--font-display);
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    color: var(--gray-500);
+    font-weight: 400;
+  }
+
+  .empty-state {
+    text-align: center;
+    padding: 32px 16px;
+    color: var(--gray-500);
+    font-size: 16px;
+    font-style: italic;
+  }
+
+  /* Project totals */
+  .project-list { display: flex; flex-direction: column; gap: 8px; }
+  .project-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 14px;
+    background: rgba(20, 18, 30, 0.35);
+    border: 1px solid transparent;
+    border-radius: 12px;
+    transition: all 0.15s;
+    cursor: pointer;
+  }
+  .project-item:hover {
+    background: rgba(20, 18, 30, 0.55);
+    border-color: var(--border);
+  }
+  .project-item.active {
+    background: var(--turquoise-soft);
+    border-color: rgba(64, 224, 208, 0.35);
+  }
+  .project-item .dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+  .project-item .name {
+    flex: 1;
+    font-size: 17px;
+    color: var(--gray-100);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-weight: 500;
+  }
+  .project-item .totals {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 2px;
+    flex-shrink: 0;
+  }
+  .project-item .today {
+    font-family: var(--font-serif);
+    font-size: 16px;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    color: var(--turquoise-glow);
+  }
+  .project-item .alltime {
+    font-family: var(--font-display);
+    font-size: 9px;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--gray-500);
+    font-variant-numeric: tabular-nums;
+  }
+  .project-item .delete-x {
+    opacity: 0;
+    color: var(--gray-500);
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-size: 18px;
+    padding: 2px 6px;
+    transition: all 0.15s;
+    border-radius: 4px;
+    line-height: 1;
+  }
+  .project-item:hover .delete-x { opacity: 1; }
+  .project-item .delete-x:hover { color: var(--danger); background: rgba(248, 113, 113, 0.1); }
+
+  /* Sessions list */
+  .session-day { margin-bottom: 18px; }
+  .session-day:last-child { margin-bottom: 0; }
+  .session-day-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    padding: 6px 4px 10px;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 8px;
+  }
+  .session-day-title {
+    font-family: var(--font-display);
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--purple-glow);
+    text-transform: uppercase;
+    letter-spacing: 0.14em;
+  }
+  .session-day-total {
+    font-family: var(--font-serif);
+    font-size: 14px;
+    color: var(--gray-300);
+    font-variant-numeric: tabular-nums;
+  }
+  .session-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 10px;
+    border-radius: 8px;
+    font-size: 16px;
+    transition: background 0.12s;
+  }
+  .session-row:hover { background: rgba(20, 18, 30, 0.4); }
+  .session-row .dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+  .session-row .name { flex: 1; color: var(--gray-100); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .session-row .mode-icon {
+    font-size: 11px;
+    color: var(--gray-500);
+    margin-right: 2px;
+    flex-shrink: 0;
+  }
+  .session-row .time {
+    font-family: var(--font-display);
+    color: var(--gray-500);
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    font-variant-numeric: tabular-nums;
+  }
+  .session-row .duration {
+    color: var(--turquoise-glow);
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    min-width: 70px;
+    text-align: right;
+    font-size: 16px;
+  }
+  .session-row .delete-x {
+    opacity: 0;
+    color: var(--gray-500);
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-size: 14px;
+    padding: 2px 6px;
+    transition: all 0.15s;
+    border-radius: 4px;
+    line-height: 1;
+  }
+  .session-row:hover .delete-x { opacity: 1; }
+  .session-row .delete-x:hover { color: var(--danger); background: rgba(248, 113, 113, 0.1); }
+
+  /* Scrollbars */
+  ::-webkit-scrollbar { width: 8px; height: 8px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--gray-700); border-radius: 4px; }
+  ::-webkit-scrollbar-thumb:hover { background: var(--gray-600); }
+  .scroll-area { max-height: 380px; overflow-y: auto; padding-right: 4px; }
+
+  .footer {
+    margin-top: 28px;
+    text-align: center;
+    color: var(--gray-600);
+    font-family: var(--font-display);
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    font-size: 10px;
+    font-weight: 400;
+    line-height: 1.7;
+  }
+  .footer-actions {
+    margin-top: 14px;
+    display: flex;
+    justify-content: center;
+    gap: 4px;
+  }
+  .footer-action {
+    background: none;
+    border: 1px solid transparent;
+    color: var(--purple);
+    font-family: var(--font-display);
+    text-transform: uppercase;
+    letter-spacing: 0.16em;
+    text-indent: 0.16em;
+    font-size: 10px;
+    font-weight: 500;
+    cursor: pointer;
+    padding: 8px 16px;
+    border-radius: 999px;
+    transition: all 0.15s;
+  }
+  .footer-action:hover {
+    color: var(--gray-100);
+    border-color: var(--border);
+    background: var(--purple-soft);
+  }
+
+  /* Chime picker */
+  .chime-picker {
+    margin-top: 14px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .chime-picker .chime-label {
+    font-family: var(--font-display);
+    text-transform: uppercase;
+    letter-spacing: 0.16em;
+    font-size: 10px;
+    color: var(--gray-500);
+    margin-right: 6px;
+  }
+  .chime-option {
+    background: none;
+    border: 1px solid transparent;
+    color: var(--gray-500);
+    font-family: var(--font-display);
+    text-transform: uppercase;
+    letter-spacing: 0.14em;
+    text-indent: 0.14em;
+    font-size: 10px;
+    font-weight: 500;
+    line-height: 1;
+    cursor: pointer;
+    padding: 8px 14px 6px;
+    border-radius: 999px;
+    transition: all 0.15s;
+  }
+  .chime-option:hover {
+    color: var(--turquoise-glow);
+    border-color: var(--border);
+  }
+  .chime-option.active {
+    color: var(--turquoise-glow);
+    background: rgba(64, 224, 208, 0.10);
+    border-color: rgba(64, 224, 208, 0.35);
+  }
+
+  /* Toast notifications */
+  .toast {
+    position: fixed;
+    bottom: 28px;
+    left: 50%;
+    transform: translateX(-50%) translateY(16px);
+    background: var(--panel-solid);
+    border: 1px solid var(--border-strong);
+    color: var(--gray-100);
+    padding: 12px 22px;
+    border-radius: 14px;
+    font-family: var(--font-serif);
+    font-size: 16px;
+    box-shadow: 0 12px 30px rgba(0, 0, 0, 0.4);
+    opacity: 0;
+    transition: opacity 0.3s, transform 0.3s;
+    z-index: 1000;
+    pointer-events: none;
+    max-width: 80vw;
+    text-align: center;
+  }
+  .toast.visible {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+  .toast-success { border-color: rgba(64, 224, 208, 0.5); color: var(--turquoise-glow); }
+  .toast-error { border-color: rgba(248, 113, 113, 0.5); color: var(--danger); }
+
+  /* ---------- Mini (Picture-in-Picture) view ---------- */
+
+  /* Hidden container in the main page when PiP isn't active */
+  #pipHidden { display: none; }
+
+  /* Body styles applied inside the PiP window */
+  .pip-body {
+    margin: 0;
+    padding: 14px 18px;
+    height: 100vh;
+    width: 100vw;
+    background: linear-gradient(135deg, var(--bg-grad-1) 0%, var(--bg-grad-2) 50%, var(--bg-grad-3) 100%);
+    color: var(--gray-100);
+    font-family: var(--font-serif);
+    overflow: hidden;
+    -webkit-font-smoothing: antialiased;
+    box-sizing: border-box;
+  }
+  .pip-body::before {
+    content: '';
+    position: fixed;
+    top: -120px;
+    left: -120px;
+    width: 280px;
+    height: 280px;
+    background: radial-gradient(circle, rgba(64, 224, 208, 0.16) 0%, transparent 70%);
+    pointer-events: none;
+  }
+  .pip-body::after {
+    content: '';
+    position: fixed;
+    bottom: -120px;
+    right: -120px;
+    width: 280px;
+    height: 280px;
+    background: radial-gradient(circle, rgba(167, 139, 250, 0.18) 0%, transparent 70%);
+    pointer-events: none;
+  }
+
+  .mini-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: space-between;
+    height: 100%;
+    width: 100%;
+    position: relative;
+    z-index: 1;
+    text-align: center;
+  }
+
+  .mini-header {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    font-family: var(--font-display);
+    text-transform: uppercase;
+    letter-spacing: 0.14em;
+    font-size: 10px;
+    font-weight: 500;
+    color: var(--gray-400);
+    width: 100%;
+    padding-top: 2px;
+  }
+  .mini-mode-icon { font-size: 11px; opacity: 0.85; }
+  .mini-project {
+    color: var(--purple-glow);
+    max-width: 220px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .mini-project.idle { color: var(--gray-500); font-style: italic; text-transform: none; letter-spacing: 0; font-family: var(--font-serif); font-size: 12px; }
+
+  .mini-display {
+    font-family: var(--font-serif);
+    font-size: 56px;
+    font-weight: 400;
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
+    background: linear-gradient(180deg, var(--gray-100) 0%, var(--gray-300) 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    user-select: none;
+    margin: 4px 0;
+  }
+  .mini-display.running {
+    background: linear-gradient(180deg, var(--turquoise-glow) 0%, var(--turquoise) 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+  .mini-display.warn {
+    background: linear-gradient(180deg, #fbbf24 0%, #f59e0b 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+
+  .mini-btn {
+    background: linear-gradient(135deg, var(--turquoise) 0%, var(--turquoise-deep) 100%);
+    color: #0f172a;
+    border: none;
+    padding: 11px 38px 8px;
+    border-radius: 999px;
+    font-family: var(--font-display);
+    font-size: 12px;
+    font-weight: 700;
+    line-height: 1;
+    letter-spacing: 0.18em;
+    text-indent: 0.18em;
+    text-transform: uppercase;
+    cursor: pointer;
+    transition: all 0.15s;
+    box-shadow: 0 4px 14px rgba(64, 224, 208, 0.3);
+  }
+  .mini-btn:hover { transform: translateY(-1px); box-shadow: 0 6px 18px rgba(64, 224, 208, 0.45); }
+  .mini-btn.stop {
+    background: linear-gradient(135deg, var(--purple) 0%, var(--purple-deep) 100%);
+    color: #fff;
+    box-shadow: 0 4px 14px rgba(167, 139, 250, 0.35);
+  }
+  .mini-btn:disabled {
+    background: var(--gray-700);
+    color: var(--gray-500);
+    cursor: not-allowed;
+    box-shadow: none;
+    transform: none;
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <div class="brand">
+      <div class="brand-mark">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="13" r="8"/>
+          <path d="M12 9v4l2 2"/>
+          <path d="M9 2h6"/>
+        </svg>
+      </div>
+      <h1>Task Timer</h1>
+    </div>
+    <div class="header-stats">
+      <div>Today<strong id="statToday">0h 0m</strong></div>
+      <div>This week<strong id="statWeek">0h 0m</strong></div>
+      <div>Projects<strong id="statProjects">0</strong></div>
+    </div>
+  </header>
+
+  <section class="timer-card">
+    <button id="pipBtn" class="pip-btn" title="Pop out as floating mini timer" aria-label="Pop out as floating mini timer">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M15 3h6v6"/>
+        <path d="M10 14L21 3"/>
+        <path d="M21 14v5a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h5"/>
+      </svg>
+    </button>
+
+    <div class="project-row">
+      <input
+        id="projectInput"
+        class="project-input"
+        type="text"
+        placeholder="Type a project name or pick from your list"
+        autocomplete="off"
+        spellcheck="false"
+      />
+      <div id="suggestions" class="project-suggestions"></div>
+    </div>
+
+    <div class="mode-tabs" role="tablist">
+      <button class="mode-tab active" data-mode="stopwatch" role="tab">Stopwatch</button>
+      <button class="mode-tab" data-mode="timer" role="tab">Timer</button>
+    </div>
+
+    <div class="mode-viewport" id="modeViewport">
+      <div class="mode-track" id="modeTrack" data-mode="stopwatch">
+
+        <!-- STOPWATCH VIEW -->
+        <div class="mode-view" id="stopwatchView">
+          <div id="stopwatchBusy" class="busy-banner" style="display:none;">
+            A countdown is running — <span>tap to view</span>
+          </div>
+          <div id="stopwatchDisplay" class="timer-display">00:00:00</div>
+          <div id="stopwatchStatus" class="timer-status">Ready when you are</div>
+          <button id="stopwatchBtn" class="start-btn">Start</button>
+        </div>
+
+        <!-- TIMER VIEW -->
+        <div class="mode-view" id="timerView">
+          <div id="timerBusy" class="busy-banner" style="display:none;">
+            A stopwatch is running — <span>tap to view</span>
+          </div>
+
+          <!-- Editable when idle -->
+          <div id="timerEdit" class="timer-edit">
+            <input class="timer-segment" id="durHours"   type="text" inputmode="numeric" maxlength="2" value="00" aria-label="Hours">
+            <span class="timer-colon">:</span>
+            <input class="timer-segment" id="durMinutes" type="text" inputmode="numeric" maxlength="2" value="25" aria-label="Minutes">
+            <span class="timer-colon">:</span>
+            <input class="timer-segment" id="durSeconds" type="text" inputmode="numeric" maxlength="2" value="00" aria-label="Seconds">
+          </div>
+          <!-- Big readout when running -->
+          <div id="timerDisplay" class="timer-display" style="display:none;">00:25:00</div>
+
+          <div class="presets" id="presets">
+            <button class="preset-btn" data-minutes="5">5m</button>
+            <button class="preset-btn" data-minutes="15">15m</button>
+            <button class="preset-btn" data-minutes="25">25m</button>
+            <button class="preset-btn" data-minutes="45">45m</button>
+            <button class="preset-btn" data-minutes="60">60m</button>
+            <button class="preset-btn" data-minutes="90">90m</button>
+          </div>
+
+          <div id="timerStatus" class="timer-status">Set a duration and press start</div>
+          <button id="timerBtn" class="start-btn">Start</button>
+        </div>
+
+      </div>
+    </div>
+
+    <div class="shortcut-hint">
+      <kbd>Space</kbd> start / stop &nbsp;·&nbsp;
+      <kbd>/</kbd> focus project &nbsp;·&nbsp;
+      <kbd>←</kbd> <kbd>→</kbd> switch mode &nbsp;·&nbsp;
+      <kbd>Esc</kbd> clear
+    </div>
+  </section>
+
+  <div class="grid">
+    <section class="panel">
+      <div class="panel-header">
+        <div class="panel-title">Projects</div>
+        <div class="panel-subtitle">Today · All-time</div>
+      </div>
+      <div id="projectList" class="project-list scroll-area"></div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-header">
+        <div class="panel-title">Recent sessions</div>
+        <div class="panel-subtitle" id="sessionPanelMeta"></div>
+      </div>
+      <div id="sessionList" class="scroll-area"></div>
+    </section>
+  </div>
+
+  <div class="footer">
+    Data is stored locally in your browser · Swipe or use ← → to switch modes
+    <div class="footer-actions">
+      <button class="footer-action" id="exportBtn" title="Download a backup of all your projects and sessions">Export Backup</button>
+      <button class="footer-action" id="importBtn" title="Restore from a previously exported backup file">Import Backup</button>
+    </div>
+    <div class="chime-picker" id="chimePicker">
+      <span class="chime-label">Chime</span>
+      <button class="chime-option" data-chime="single">Single Bell</button>
+      <button class="chime-option" data-chime="cathedral">Cathedral</button>
+      <button class="chime-option" data-chime="meditation">Meditation Bell</button>
+      <button class="chime-option" data-chime="mantle">Mantle Clock</button>
+    </div>
+  </div>
+</div>
+
+<!-- Hidden mini container; gets moved into the PiP window when popped out -->
+<div id="pipHidden">
+  <div id="miniContainer" class="mini-container">
+    <div class="mini-header">
+      <span class="mini-mode-icon" id="miniMode">⏱</span>
+      <span class="mini-project" id="miniProject">No project yet</span>
+    </div>
+    <div class="mini-display" id="miniDisplay">00:00:00</div>
+    <button class="mini-btn" id="miniBtn">Start</button>
+  </div>
+</div>
+
+<script>
+'use strict';
+
+// ---------- Web App Manifest (generated at runtime so this stays one file) ----------
+(function setupManifest() {
+  const ICON_SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">'
+    + '<defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1">'
+    + '<stop offset="0" stop-color="#40e0d0"/><stop offset="1" stop-color="#a78bfa"/>'
+    + '</linearGradient></defs>'
+    + '<rect width="512" height="512" rx="96" fill="url(#g)"/>'
+    + '<g fill="none" stroke="#fff" stroke-width="36" stroke-linecap="round" stroke-linejoin="round">'
+    + '<circle cx="256" cy="296" r="152"/>'
+    + '<path d="M256 220v76l50 50"/>'
+    + '<path d="M204 80h104"/>'
+    + '</g></svg>';
+  const iconUri = 'data:image/svg+xml;utf8,' + encodeURIComponent(ICON_SVG);
+  const manifest = {
+    name: 'Task Timer',
+    short_name: 'Task Timer',
+    description: 'A simple, beautiful time tracking app for your projects.',
+    start_url: '.',
+    scope: '.',
+    display: 'standalone',
+    background_color: '#1a1626',
+    theme_color: '#40e0d0',
+    icons: [
+      { src: iconUri, sizes: 'any', type: 'image/svg+xml', purpose: 'any' },
+      { src: iconUri, sizes: 'any', type: 'image/svg+xml', purpose: 'maskable' },
+    ],
+  };
+  const blob = new Blob([JSON.stringify(manifest)], { type: 'application/manifest+json' });
+  const link = document.createElement('link');
+  link.rel = 'manifest';
+  link.href = URL.createObjectURL(blob);
+  document.head.appendChild(link);
+})();
+
+// ---------- Storage ----------
+const STORAGE_KEY = 'task-timer-v1';
+
+function migrateChime(value) {
+  // Map removed chime names to the new ones, falling back to cathedral.
+  if (value === 'grandfather') return 'single';
+  if (value === 'musicbox') return 'meditation';
+  const known = ['single', 'cathedral', 'meditation', 'mantle'];
+  if (typeof value === 'string' && known.includes(value)) return value;
+  return 'cathedral';
+}
+
+function loadState() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return defaultState();
+    const parsed = JSON.parse(raw);
+    return {
+      projects: Array.isArray(parsed.projects) ? parsed.projects : [],
+      sessions: Array.isArray(parsed.sessions) ? parsed.sessions.map(s => ({ ...s, mode: s.mode || 'stopwatch' })) : [],
+      currentSession: parsed.currentSession || null,
+      lastProject: typeof parsed.lastProject === 'string' ? parsed.lastProject : '',
+      mode: (parsed.mode === 'timer' || parsed.mode === 'stopwatch') ? parsed.mode : 'stopwatch',
+      timerDurationMs: typeof parsed.timerDurationMs === 'number' ? parsed.timerDurationMs : 25 * 60 * 1000,
+      chime: migrateChime(parsed.chime),
+    };
+  } catch (e) {
+    console.warn('Failed to load state', e);
+    return defaultState();
+  }
+}
+
+function defaultState() {
+  return {
+    projects: [],
+    sessions: [],
+    currentSession: null,
+    lastProject: '',
+    mode: 'stopwatch',
+    timerDurationMs: 25 * 60 * 1000,
+    chime: 'cathedral',
+  };
+}
+
+function saveState() {
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }
+  catch (e) { console.warn('Failed to save state', e); }
+}
+
+let state = loadState();
+
+// ---------- Project colors ----------
+const PROJECT_PALETTE = [
+  '#40e0d0', '#a78bfa', '#5eead4', '#c4b5fd',
+  '#22d3ee', '#8b5cf6', '#2dd4bf', '#d8b4fe',
+  '#67e8f9', '#9333ea',
+];
+function colorFor(name) {
+  if (!name) return '#94a3b8';
+  let h = 0;
+  for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) >>> 0;
+  return PROJECT_PALETTE[h % PROJECT_PALETTE.length];
+}
+
+// ---------- Date helpers ----------
+function dayKey(d) {
+  const date = (d instanceof Date) ? d : new Date(d);
+  return date.getFullYear() + '-' + String(date.getMonth()+1).padStart(2,'0') + '-' + String(date.getDate()).padStart(2,'0');
+}
+function todayKey() { return dayKey(new Date()); }
+function startOfWeekKey() {
+  const d = new Date();
+  const day = d.getDay();
+  const diff = (day + 6) % 7;
+  d.setDate(d.getDate() - diff);
+  d.setHours(0,0,0,0);
+  return d.getTime();
+}
+function formatDayHeader(key) {
+  const today = todayKey();
+  if (key === today) return 'Today';
+  const yest = new Date(); yest.setDate(yest.getDate() - 1);
+  if (key === dayKey(yest)) return 'Yesterday';
+  const [y,m,d] = key.split('-').map(Number);
+  return new Date(y, m-1, d).toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric' });
+}
+function formatClock(ms) {
+  return new Date(ms).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+}
+function formatDuration(ms) {
+  const totalSec = Math.max(0, Math.floor(ms / 1000));
+  const h = Math.floor(totalSec / 3600);
+  const m = Math.floor((totalSec % 3600) / 60);
+  const s = totalSec % 60;
+  return [h,m,s].map(n => String(n).padStart(2,'0')).join(':');
+}
+function formatDurationShort(ms) {
+  const totalSec = Math.max(0, Math.floor(ms / 1000));
+  const h = Math.floor(totalSec / 3600);
+  const m = Math.floor((totalSec % 3600) / 60);
+  if (h > 0) return `${h}h ${m}m`;
+  if (m > 0) return `${m}m`;
+  return `${totalSec}s`;
+}
+
+// ---------- DOM refs ----------
+const els = {
+  projectInput: document.getElementById('projectInput'),
+  suggestions: document.getElementById('suggestions'),
+  modeViewport: document.getElementById('modeViewport'),
+  modeTrack: document.getElementById('modeTrack'),
+  modeTabs: document.querySelectorAll('.mode-tab'),
+
+  // Stopwatch
+  stopwatchView: document.getElementById('stopwatchView'),
+  stopwatchDisplay: document.getElementById('stopwatchDisplay'),
+  stopwatchStatus: document.getElementById('stopwatchStatus'),
+  stopwatchBtn: document.getElementById('stopwatchBtn'),
+  stopwatchBusy: document.getElementById('stopwatchBusy'),
+
+  // Timer
+  timerView: document.getElementById('timerView'),
+  timerEdit: document.getElementById('timerEdit'),
+  durHours: document.getElementById('durHours'),
+  durMinutes: document.getElementById('durMinutes'),
+  durSeconds: document.getElementById('durSeconds'),
+  timerDisplay: document.getElementById('timerDisplay'),
+  timerStatus: document.getElementById('timerStatus'),
+  timerBtn: document.getElementById('timerBtn'),
+  timerBusy: document.getElementById('timerBusy'),
+  presets: document.getElementById('presets'),
+
+  // Other
+  projectList: document.getElementById('projectList'),
+  sessionList: document.getElementById('sessionList'),
+  sessionPanelMeta: document.getElementById('sessionPanelMeta'),
+  statToday: document.getElementById('statToday'),
+  statWeek: document.getElementById('statWeek'),
+  statProjects: document.getElementById('statProjects'),
+
+  // Pop-out / mini
+  pipBtn: document.getElementById('pipBtn'),
+  pipHidden: document.getElementById('pipHidden'),
+  miniContainer: document.getElementById('miniContainer'),
+  miniMode: document.getElementById('miniMode'),
+  miniProject: document.getElementById('miniProject'),
+  miniDisplay: document.getElementById('miniDisplay'),
+  miniBtn: document.getElementById('miniBtn'),
+};
+
+// ---------- Audio (chime) ----------
+let audioCtx = null;
+function ensureAudio() {
+  if (!audioCtx) {
+    const Ctx = window.AudioContext || window.webkitAudioContext;
+    if (!Ctx) return null;
+    audioCtx = new Ctx();
+  }
+  if (audioCtx.state === 'suspended') audioCtx.resume();
+  return audioCtx;
+}
+// Bell-style chime options. Each note is rendered as a stack of inharmonic
+// partials (the ratios are what makes a bell sound like a bell instead of
+// a flute). Pattern is always low → high → medium.
+const CHIME_OPTIONS = {
+  single: {
+    label: 'Single Bell',
+    notes: [293.66], // D4 — the highest of the previous Grandfather pattern
+    spacing: 0,
+    duration: 4.0,
+    gain: 0.22,
+    partials: [
+      { ratio: 0.5,  gain: 0.55, decay: 1.0 },  // hum tone (octave below)
+      { ratio: 1.0,  gain: 1.00, decay: 1.0 },  // strike / fundamental
+      { ratio: 2.0,  gain: 0.55, decay: 0.7 },  // octave
+      { ratio: 2.4,  gain: 0.30, decay: 0.4 },  // minor 10th (inharmonic)
+      { ratio: 3.0,  gain: 0.18, decay: 0.3 },  // 12th
+    ],
+  },
+  cathedral: {
+    label: 'Cathedral',
+    notes: [164.81, 246.94, 196.00], // E3, B3, G3 — deepest, most sonorous
+    spacing: 0.95,
+    duration: 5.0,
+    gain: 0.18,
+    partials: [
+      { ratio: 0.5,  gain: 0.65, decay: 1.0 },
+      { ratio: 1.0,  gain: 1.00, decay: 1.0 },
+      { ratio: 1.19, gain: 0.45, decay: 0.65 }, // minor 3rd above (the "tierce")
+      { ratio: 1.5,  gain: 0.32, decay: 0.55 }, // perfect 5th (the "quint")
+      { ratio: 2.0,  gain: 0.45, decay: 0.55 }, // nominal
+      { ratio: 2.51, gain: 0.22, decay: 0.30 },
+      { ratio: 3.01, gain: 0.14, decay: 0.20 },
+    ],
+  },
+  meditation: {
+    label: 'Meditation Bell',
+    notes: [349.23], // F4 — slightly above the old Music Box's E4, with very long decay
+    spacing: 0,
+    duration: 8.0,
+    gain: 0.22,
+    partials: [
+      { ratio: 1.0,    gain: 1.00, decay: 1.0 },   // strong fundamental
+      { ratio: 1.004,  gain: 0.55, decay: 1.0 },   // very slight detune → gentle "shimmer" beating
+      { ratio: 2.0,    gain: 0.35, decay: 0.7 },   // octave (clean, no inharmonicity)
+      { ratio: 3.01,   gain: 0.12, decay: 0.4 },
+      { ratio: 4.0,    gain: 0.06, decay: 0.25 },
+    ],
+  },
+  mantle: {
+    label: 'Mantle Clock',
+    notes: [220.00, 329.63, 277.18], // A3, E4, C#4 — bright but warm
+    spacing: 0.70,
+    duration: 3.2,
+    gain: 0.20,
+    partials: [
+      { ratio: 0.5,  gain: 0.45, decay: 1.0 },
+      { ratio: 1.0,  gain: 1.00, decay: 1.0 },
+      { ratio: 1.5,  gain: 0.30, decay: 0.55 },
+      { ratio: 2.0,  gain: 0.55, decay: 0.65 },
+      { ratio: 3.0,  gain: 0.20, decay: 0.40 },
+    ],
+  },
+};
+
+function playBellNote(ctx, freq, startTime, cfg) {
+  cfg.partials.forEach(p => {
+    const osc = ctx.createOscillator();
+    osc.type = 'sine';
+    osc.frequency.value = freq * p.ratio;
+
+    const g = ctx.createGain();
+    osc.connect(g); g.connect(ctx.destination);
+
+    const peak = cfg.gain * p.gain;
+    const decay = cfg.duration * p.decay;
+
+    g.gain.setValueAtTime(0, startTime);
+    g.gain.linearRampToValueAtTime(peak, startTime + 0.006);
+    g.gain.exponentialRampToValueAtTime(0.0001, startTime + decay);
+
+    osc.start(startTime);
+    osc.stop(startTime + decay + 0.1);
+  });
+}
+
+function playChimeOption(name) {
+  const ctx = ensureAudio();
+  if (!ctx) return;
+  const cfg = CHIME_OPTIONS[name] || CHIME_OPTIONS.cathedral;
+  cfg.notes.forEach((freq, i) => {
+    playBellNote(ctx, freq, ctx.currentTime + 0.05 + i * cfg.spacing, cfg);
+  });
+}
+
+function playChime() {
+  playChimeOption(state.chime || 'cathedral');
+}
+
+// ---------- Mode switching ----------
+function setMode(mode, opts) {
+  if (mode !== 'stopwatch' && mode !== 'timer') return;
+  state.mode = mode;
+  els.modeTrack.dataset.mode = mode;
+  els.modeTabs.forEach(t => t.classList.toggle('active', t.dataset.mode === mode));
+  saveState();
+  render();
+}
+
+els.modeTabs.forEach(t => {
+  t.addEventListener('click', () => setMode(t.dataset.mode));
+});
+
+// ---------- Swipe gesture ----------
+let touchStart = null;
+els.modeViewport.addEventListener('touchstart', (e) => {
+  if (e.touches.length !== 1) return;
+  touchStart = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+}, { passive: true });
+els.modeViewport.addEventListener('touchend', (e) => {
+  if (!touchStart) return;
+  const t = e.changedTouches[0];
+  const dx = t.clientX - touchStart.x;
+  const dy = t.clientY - touchStart.y;
+  if (Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy) * 1.4) {
+    if (dx < 0) setMode('timer'); else setMode('stopwatch');
+  }
+  touchStart = null;
+}, { passive: true });
+
+// Pointer drag (mouse/trackpad) — simple
+let pointerStart = null;
+els.modeViewport.addEventListener('pointerdown', (e) => {
+  // Skip drags that start on form controls (so editing duration still works)
+  const tag = (e.target.tagName || '').toLowerCase();
+  if (tag === 'input' || tag === 'button') return;
+  if (e.pointerType === 'mouse' && e.button !== 0) return;
+  pointerStart = { x: e.clientX, y: e.clientY, type: e.pointerType };
+});
+window.addEventListener('pointerup', (e) => {
+  if (!pointerStart) return;
+  const dx = e.clientX - pointerStart.x;
+  const dy = e.clientY - pointerStart.y;
+  if (Math.abs(dx) > 80 && Math.abs(dx) > Math.abs(dy) * 1.6) {
+    if (dx < 0) setMode('timer'); else setMode('stopwatch');
+  }
+  pointerStart = null;
+});
+
+// ---------- Timer engine ----------
+let tickHandle = null;
+
+function isRunning() { return !!state.currentSession; }
+function isRunningInMode(mode) { return state.currentSession && state.currentSession.mode === mode; }
+
+function startStopwatch(projectName) {
+  const name = (projectName || '').trim();
+  if (!name) { flashInput(); return; }
+  if (!state.projects.includes(name)) state.projects.push(name);
+  state.lastProject = name;
+  state.currentSession = { project: name, startMs: Date.now(), mode: 'stopwatch' };
+  ensureAudio();
+  saveState();
+  els.projectInput.value = name;
+  hideSuggestions();
+  startTick();
+  render();
+}
+
+function startTimer(projectName, durationMs) {
+  const name = (projectName || '').trim();
+  if (!name) { flashInput(); return; }
+  if (durationMs <= 0) {
+    flashTimerEdit();
+    return;
+  }
+  if (!state.projects.includes(name)) state.projects.push(name);
+  state.lastProject = name;
+  state.timerDurationMs = durationMs;
+  state.currentSession = { project: name, startMs: Date.now(), mode: 'timer', durationMs };
+  ensureAudio();
+  saveState();
+  els.projectInput.value = name;
+  hideSuggestions();
+  startTick();
+  render();
+}
+
+function stopCurrent(opts) {
+  if (!state.currentSession) return;
+  const { project, startMs, mode, durationMs } = state.currentSession;
+  const endMs = (opts && opts.endMs) || Date.now();
+  let recorded = endMs - startMs;
+  // For timer mode, when it auto-completes, record the full duration target.
+  if (mode === 'timer' && opts && opts.completed) {
+    recorded = durationMs;
+  }
+  if (recorded >= 1000) {
+    state.sessions.push({
+      id: 'sess_' + endMs + '_' + Math.random().toString(36).slice(2,7),
+      project,
+      startMs,
+      endMs: startMs + recorded,
+      duration: recorded,
+      date: dayKey(new Date(startMs)),
+      mode: mode || 'stopwatch',
+    });
+  }
+  state.currentSession = null;
+  saveState();
+  stopTick();
+  if (opts && opts.completed) playChime();
+  render();
+}
+
+function toggleStopwatch() {
+  if (state.currentSession && state.currentSession.mode === 'stopwatch') {
+    stopCurrent();
+  } else if (state.currentSession) {
+    // Other mode running — focus that mode
+    setMode(state.currentSession.mode);
+  } else {
+    const name = els.projectInput.value.trim() || state.lastProject;
+    startStopwatch(name);
+  }
+}
+
+function toggleTimer() {
+  if (state.currentSession && state.currentSession.mode === 'timer') {
+    stopCurrent();
+  } else if (state.currentSession) {
+    setMode(state.currentSession.mode);
+  } else {
+    const name = els.projectInput.value.trim() || state.lastProject;
+    const dur = readDurationFromInputs();
+    startTimer(name, dur);
+  }
+}
+
+function startTick() {
+  stopTick();
+  tickHandle = setInterval(updateTimerDisplay, 250);
+  updateTimerDisplay();
+}
+function stopTick() {
+  if (tickHandle) clearInterval(tickHandle);
+  tickHandle = null;
+  updateTimerDisplay();
+}
+
+function updateTimerDisplay() {
+  const sess = state.currentSession;
+
+  // STOPWATCH VIEW
+  if (sess && sess.mode === 'stopwatch') {
+    const elapsed = Date.now() - sess.startMs;
+    els.stopwatchDisplay.textContent = formatDuration(elapsed);
+    els.stopwatchDisplay.classList.add('running');
+    els.stopwatchDisplay.classList.remove('warn');
+    els.stopwatchStatus.classList.remove('normal');
+    els.stopwatchStatus.innerHTML = `<span class="pulse"></span><em>Tracking</em><span class="running-project">${escapeHtml(sess.project)}</span>`;
+    els.stopwatchBtn.textContent = 'Stop';
+    els.stopwatchBtn.classList.add('stop');
+    els.stopwatchBtn.disabled = false;
+    els.stopwatchBusy.style.display = 'none';
+  } else {
+    els.stopwatchDisplay.textContent = '00:00:00';
+    els.stopwatchDisplay.classList.remove('running', 'warn');
+    els.stopwatchStatus.classList.add('normal');
+    els.stopwatchStatus.textContent = state.lastProject ? `Last project: ${state.lastProject}` : 'Ready when you are';
+    els.stopwatchBtn.textContent = 'Start';
+    els.stopwatchBtn.classList.remove('stop');
+    if (sess && sess.mode === 'timer') {
+      els.stopwatchBtn.disabled = true;
+      els.stopwatchBusy.style.display = 'block';
+    } else {
+      els.stopwatchBtn.disabled = false;
+      els.stopwatchBusy.style.display = 'none';
+    }
+  }
+
+  // TIMER VIEW
+  if (sess && sess.mode === 'timer') {
+    els.timerEdit.style.display = 'none';
+    els.timerDisplay.style.display = 'block';
+    els.presets.style.display = 'none';
+
+    const remaining = sess.durationMs - (Date.now() - sess.startMs);
+    if (remaining <= 0) {
+      // Auto-complete
+      els.timerDisplay.textContent = '00:00:00';
+      els.timerDisplay.classList.add('running');
+      stopCurrent({ completed: true, endMs: sess.startMs + sess.durationMs });
+      return;
+    }
+    els.timerDisplay.textContent = formatDuration(remaining);
+    els.timerDisplay.classList.add('running');
+    els.timerDisplay.classList.toggle('warn', remaining < 10000);
+    els.timerStatus.classList.remove('normal');
+    els.timerStatus.innerHTML = `<span class="pulse"></span><em>Counting down</em><span class="running-project">${escapeHtml(sess.project)}</span>`;
+    els.timerBtn.textContent = 'Stop';
+    els.timerBtn.classList.add('stop');
+    els.timerBtn.disabled = false;
+    els.timerBusy.style.display = 'none';
+  } else {
+    els.timerEdit.style.display = '';
+    els.timerDisplay.style.display = 'none';
+    els.presets.style.display = '';
+    els.timerStatus.classList.add('normal');
+    els.timerStatus.textContent = state.lastProject ? `Last project: ${state.lastProject}` : 'Set a duration and press start';
+    els.timerBtn.textContent = 'Start';
+    els.timerBtn.classList.remove('stop');
+    if (sess && sess.mode === 'stopwatch') {
+      els.timerBtn.disabled = true;
+      els.timerBusy.style.display = 'block';
+    } else {
+      els.timerBtn.disabled = false;
+      els.timerBusy.style.display = 'none';
+    }
+  }
+
+  // Tab title
+  if (sess) {
+    const ms = sess.mode === 'timer'
+      ? Math.max(0, sess.durationMs - (Date.now() - sess.startMs))
+      : Date.now() - sess.startMs;
+    document.title = formatDuration(ms) + ' · ' + sess.project;
+  } else {
+    document.title = 'Task Timer';
+  }
+
+  // Mini view (in PiP window or hidden in main page)
+  updateMini();
+}
+
+function updateMini() {
+  const sess = state.currentSession;
+  if (sess) {
+    let displayMs;
+    if (sess.mode === 'timer') {
+      displayMs = Math.max(0, sess.durationMs - (Date.now() - sess.startMs));
+    } else {
+      displayMs = Date.now() - sess.startMs;
+    }
+    els.miniDisplay.textContent = formatDuration(displayMs);
+    els.miniDisplay.classList.add('running');
+    els.miniDisplay.classList.toggle('warn', sess.mode === 'timer' && displayMs < 10000);
+    els.miniProject.textContent = sess.project;
+    els.miniProject.classList.remove('idle');
+    els.miniMode.textContent = sess.mode === 'timer' ? '⏳' : '⏱';
+    els.miniBtn.textContent = 'Stop';
+    els.miniBtn.classList.add('stop');
+    els.miniBtn.disabled = false;
+  } else {
+    const displayMs = state.mode === 'timer' ? state.timerDurationMs : 0;
+    els.miniDisplay.textContent = formatDuration(displayMs);
+    els.miniDisplay.classList.remove('running', 'warn');
+    if (state.lastProject) {
+      els.miniProject.textContent = state.lastProject;
+      els.miniProject.classList.remove('idle');
+    } else {
+      els.miniProject.textContent = 'Pick a project in main window';
+      els.miniProject.classList.add('idle');
+    }
+    els.miniMode.textContent = state.mode === 'timer' ? '⏳' : '⏱';
+    els.miniBtn.textContent = 'Start';
+    els.miniBtn.classList.remove('stop');
+    els.miniBtn.disabled = !state.lastProject;
+  }
+}
+
+function flashInput() {
+  els.projectInput.focus();
+  els.projectInput.style.borderColor = 'var(--danger)';
+  setTimeout(() => { els.projectInput.style.borderColor = ''; }, 600);
+}
+function flashTimerEdit() {
+  [els.durHours, els.durMinutes, els.durSeconds].forEach(i => {
+    i.style.color = 'var(--danger)';
+    setTimeout(() => { i.style.color = ''; }, 600);
+  });
+}
+
+// ---------- Duration inputs ----------
+function readDurationFromInputs() {
+  const h = parseInt(els.durHours.value, 10) || 0;
+  const m = parseInt(els.durMinutes.value, 10) || 0;
+  const s = parseInt(els.durSeconds.value, 10) || 0;
+  return ((h * 3600) + (m * 60) + s) * 1000;
+}
+function writeDurationToInputs(ms) {
+  const totalSec = Math.max(0, Math.floor(ms / 1000));
+  const h = Math.floor(totalSec / 3600);
+  const m = Math.floor((totalSec % 3600) / 60);
+  const s = totalSec % 60;
+  els.durHours.value = String(h).padStart(2,'0');
+  els.durMinutes.value = String(m).padStart(2,'0');
+  els.durSeconds.value = String(s).padStart(2,'0');
+  syncPresets();
+}
+function sanitizeSegmentInput(input, max) {
+  input.value = (input.value || '').replace(/\D/g, '').slice(0, 2);
+  if (input.value === '') return;
+  let n = parseInt(input.value, 10);
+  if (isNaN(n)) n = 0;
+  if (n > max) n = max;
+  input.value = String(n).padStart(2,'0');
+}
+[
+  { el: els.durHours, max: 23 },
+  { el: els.durMinutes, max: 59 },
+  { el: els.durSeconds, max: 59 }
+].forEach(({ el, max }) => {
+  el.addEventListener('focus', () => el.select());
+  el.addEventListener('input', () => {
+    el.value = (el.value || '').replace(/\D/g, '').slice(0, 2);
+  });
+  el.addEventListener('blur', () => {
+    sanitizeSegmentInput(el, max);
+    state.timerDurationMs = readDurationFromInputs();
+    saveState();
+    syncPresets();
+  });
+  el.addEventListener('keydown', (e) => {
+    if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+      e.preventDefault();
+      let n = parseInt(el.value, 10) || 0;
+      n += (e.key === 'ArrowUp' ? 1 : -1);
+      if (n < 0) n = max;
+      if (n > max) n = 0;
+      el.value = String(n).padStart(2, '0');
+      state.timerDurationMs = readDurationFromInputs();
+      saveState();
+      syncPresets();
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      el.blur();
+      toggleTimer();
+    }
+  });
+});
+
+// ---------- Presets ----------
+function syncPresets() {
+  const totalMin = Math.round(readDurationFromInputs() / 60000);
+  els.presets.querySelectorAll('.preset-btn').forEach(b => {
+    b.classList.toggle('active', parseInt(b.dataset.minutes, 10) === totalMin);
+  });
+}
+els.presets.addEventListener('click', (e) => {
+  const btn = e.target.closest('.preset-btn');
+  if (!btn) return;
+  const min = parseInt(btn.dataset.minutes, 10);
+  writeDurationToInputs(min * 60 * 1000);
+  state.timerDurationMs = readDurationFromInputs();
+  saveState();
+});
+
+// ---------- Buttons ----------
+els.stopwatchBtn.addEventListener('click', toggleStopwatch);
+els.timerBtn.addEventListener('click', toggleTimer);
+els.stopwatchBusy.addEventListener('click', () => setMode('timer'));
+els.timerBusy.addEventListener('click', () => setMode('stopwatch'));
+
+// Mini button — start (in current mode) or stop, depending on state
+els.miniBtn.addEventListener('click', () => {
+  if (state.currentSession) {
+    stopCurrent();
+  } else {
+    if (!state.lastProject) return;
+    if (state.mode === 'timer') startTimer(state.lastProject, state.timerDurationMs);
+    else startStopwatch(state.lastProject);
+  }
+});
+
+// ---------- Export / Import ----------
+function showToast(msg, kind) {
+  const toast = document.createElement('div');
+  toast.className = 'toast' + (kind ? ' toast-' + kind : '');
+  toast.textContent = msg;
+  document.body.appendChild(toast);
+  requestAnimationFrame(() => toast.classList.add('visible'));
+  setTimeout(() => {
+    toast.classList.remove('visible');
+    setTimeout(() => toast.remove(), 400);
+  }, 3200);
+}
+
+function exportData() {
+  const payload = {
+    app: 'task-timer',
+    version: 1,
+    exportedAt: new Date().toISOString(),
+    state: {
+      projects: state.projects,
+      sessions: state.sessions,
+      lastProject: state.lastProject,
+      mode: state.mode,
+      timerDurationMs: state.timerDurationMs,
+    },
+  };
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `task-timer-backup-${dayKey(new Date())}.json`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  showToast(`Exported ${state.sessions.length} sessions across ${state.projects.length} projects`, 'success');
+}
+
+function isValidSession(s) {
+  return s
+    && typeof s.project === 'string' && s.project.length > 0
+    && typeof s.startMs === 'number'
+    && typeof s.duration === 'number' && s.duration >= 0
+    && typeof s.date === 'string';
+}
+
+function importData() {
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = '.json,application/json';
+  input.style.display = 'none';
+  document.body.appendChild(input);
+
+  input.addEventListener('change', async () => {
+    const file = input.files && input.files[0];
+    document.body.removeChild(input);
+    if (!file) return;
+
+    let parsed;
+    try {
+      const text = await file.text();
+      parsed = JSON.parse(text);
+    } catch (e) {
+      showToast('Could not read that file — is it valid JSON?', 'error');
+      return;
+    }
+
+    // Accept either { state: {...} } or the state object directly
+    const incoming = parsed && parsed.state ? parsed.state : parsed;
+    if (!incoming || !Array.isArray(incoming.projects) || !Array.isArray(incoming.sessions)) {
+      showToast('That doesn’t look like a Task Timer backup', 'error');
+      return;
+    }
+
+    const incomingSessions = incoming.sessions.filter(isValidSession);
+    const ok = confirm(
+      `This backup contains ${incomingSessions.length} sessions across ${incoming.projects.length} projects.\n\n` +
+      `It will be merged with your current data — nothing will be overwritten or lost. Continue?`
+    );
+    if (!ok) return;
+
+    // Merge projects (dedupe by name)
+    const projectSet = new Set(state.projects);
+    incoming.projects.forEach(p => { if (typeof p === 'string' && p.trim()) projectSet.add(p); });
+
+    // Merge sessions (dedupe by id; assign new id if missing)
+    const existingIds = new Set(state.sessions.map(s => s.id));
+    let added = 0;
+    incomingSessions.forEach(s => {
+      const id = s.id || ('sess_' + s.startMs + '_' + Math.random().toString(36).slice(2,7));
+      if (existingIds.has(id)) return;
+      // Make sure every project referenced exists in the project set
+      projectSet.add(s.project);
+      state.sessions.push({
+        id,
+        project: s.project,
+        startMs: s.startMs,
+        endMs: typeof s.endMs === 'number' ? s.endMs : s.startMs + s.duration,
+        duration: s.duration,
+        date: s.date,
+        mode: s.mode === 'timer' ? 'timer' : 'stopwatch',
+      });
+      existingIds.add(id);
+      added++;
+    });
+    state.projects = [...projectSet];
+
+    saveState();
+    render();
+    showToast(`Imported ${added} new session${added === 1 ? '' : 's'}` + (added === 0 ? ' (everything was already here)' : ''), 'success');
+  });
+
+  input.click();
+}
+
+document.getElementById('exportBtn').addEventListener('click', exportData);
+document.getElementById('importBtn').addEventListener('click', importData);
+
+// Chime picker — click to both preview and set the active chime
+document.querySelectorAll('.chime-option').forEach(btn => {
+  btn.addEventListener('click', () => {
+    state.chime = btn.dataset.chime;
+    saveState();
+    document.querySelectorAll('.chime-option').forEach(b => b.classList.toggle('active', b === btn));
+    playChimeOption(state.chime);
+  });
+});
+
+// Mark the saved chime as active on init
+const initialActive = document.querySelector(`.chime-option[data-chime="${state.chime || 'cathedral'}"]`);
+if (initialActive) initialActive.classList.add('active');
+
+// ---------- Picture-in-Picture mini mode ----------
+let pipWindow = null;
+const pipSupported = 'documentPictureInPicture' in window;
+
+if (!pipSupported) {
+  els.pipBtn.style.display = 'none';
+}
+
+async function popOut() {
+  if (pipWindow) { pipWindow.close(); return; }
+  if (!pipSupported) return;
+  try {
+    pipWindow = await documentPictureInPicture.requestWindow({ width: 320, height: 200 });
+  } catch (e) { pipWindow = null; return; }
+
+  // Clone all stylesheets and font links into the PiP document so it inherits look & fonts
+  document.querySelectorAll('link[rel="stylesheet"], link[rel="preconnect"], style').forEach(node => {
+    pipWindow.document.head.appendChild(node.cloneNode(true));
+  });
+
+  // Match meta charset/viewport
+  const meta = pipWindow.document.createElement('meta');
+  meta.setAttribute('charset', 'UTF-8');
+  pipWindow.document.head.appendChild(meta);
+
+  pipWindow.document.title = 'Task Timer';
+  pipWindow.document.body.classList.add('pip-body');
+  pipWindow.document.body.append(els.miniContainer);
+
+  els.pipBtn.classList.add('active');
+  els.pipBtn.title = 'Close mini floating window';
+
+  // When user closes the PiP window, return the element home
+  pipWindow.addEventListener('pagehide', () => {
+    els.pipHidden.appendChild(els.miniContainer);
+    pipWindow = null;
+    els.pipBtn.classList.remove('active');
+    els.pipBtn.title = 'Pop out as floating mini timer';
+    updateTimerDisplay();
+  });
+
+  updateTimerDisplay();
+}
+els.pipBtn.addEventListener('click', popOut);
+
+// ---------- Rendering ----------
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+}
+
+function totalsForProject(name) {
+  const today = todayKey();
+  let allTime = 0, todayTotal = 0;
+  for (const s of state.sessions) {
+    if (s.project !== name) continue;
+    allTime += s.duration;
+    if (s.date === today) todayTotal += s.duration;
+  }
+  if (state.currentSession && state.currentSession.project === name) {
+    let live;
+    if (state.currentSession.mode === 'timer') {
+      live = Math.min(Date.now() - state.currentSession.startMs, state.currentSession.durationMs);
+    } else {
+      live = Date.now() - state.currentSession.startMs;
+    }
+    allTime += live;
+    if (dayKey(state.currentSession.startMs) === today) todayTotal += live;
+  }
+  return { allTime, todayTotal };
+}
+
+function renderProjects() {
+  const names = [...state.projects].sort((a,b) => totalsForProject(b).allTime - totalsForProject(a).allTime);
+  if (names.length === 0) {
+    els.projectList.innerHTML = `<div class="empty-state">No projects yet.<br>Type a name above and hit Start.</div>`;
+    return;
+  }
+  const activeName = state.currentSession ? state.currentSession.project : null;
+  els.projectList.innerHTML = names.map(name => {
+    const { allTime, todayTotal } = totalsForProject(name);
+    const isActive = name === activeName;
+    return `
+      <div class="project-item ${isActive ? 'active' : ''}" data-project="${escapeHtml(name)}">
+        <span class="dot" style="background:${colorFor(name)}; box-shadow: 0 0 8px ${colorFor(name)}66"></span>
+        <span class="name">${escapeHtml(name)}</span>
+        <span class="totals">
+          <span class="today">${formatDurationShort(todayTotal)}</span>
+          <span class="alltime">${formatDurationShort(allTime)} total</span>
+        </span>
+        <button class="delete-x" data-delete-project="${escapeHtml(name)}" title="Delete project and its sessions">×</button>
+      </div>`;
+  }).join('');
+}
+
+function renderSessions() {
+  const byDay = new Map();
+  for (const s of state.sessions) {
+    if (!byDay.has(s.date)) byDay.set(s.date, []);
+    byDay.get(s.date).push(s);
+  }
+  const days = [...byDay.keys()].sort().reverse();
+  if (days.length === 0 && !state.currentSession) {
+    els.sessionList.innerHTML = `<div class="empty-state">No sessions yet today.</div>`;
+    els.sessionPanelMeta.textContent = '';
+    return;
+  }
+  const visibleDays = days.slice(0, 30);
+  els.sessionPanelMeta.textContent = days.length > visibleDays.length ? `Last ${visibleDays.length} days` : '';
+
+  let html = '';
+  for (const day of visibleDays) {
+    const sessions = byDay.get(day).slice().sort((a,b) => b.startMs - a.startMs);
+    let dayTotal = sessions.reduce((sum, s) => sum + s.duration, 0);
+    if (state.currentSession && day === todayKey() && dayKey(state.currentSession.startMs) === day) {
+      dayTotal += state.currentSession.mode === 'timer'
+        ? Math.min(Date.now() - state.currentSession.startMs, state.currentSession.durationMs)
+        : Date.now() - state.currentSession.startMs;
+    }
+    html += `<div class="session-day">
+      <div class="session-day-header">
+        <span class="session-day-title">${formatDayHeader(day)}</span>
+        <span class="session-day-total">${formatDurationShort(dayTotal)}</span>
+      </div>`;
+    for (const s of sessions) {
+      const icon = s.mode === 'timer' ? '⏳' : '⏱';
+      html += `<div class="session-row">
+        <span class="dot" style="background:${colorFor(s.project)}"></span>
+        <span class="mode-icon" title="${s.mode}">${icon}</span>
+        <span class="name">${escapeHtml(s.project)}</span>
+        <span class="time">${formatClock(s.startMs)}</span>
+        <span class="duration">${formatDurationShort(s.duration)}</span>
+        <button class="delete-x" data-delete-session="${s.id}" title="Delete session">×</button>
+      </div>`;
+    }
+    html += `</div>`;
+  }
+  els.sessionList.innerHTML = html;
+}
+
+function renderHeaderStats() {
+  const today = todayKey();
+  const weekStart = startOfWeekKey();
+  let todayMs = 0, weekMs = 0;
+  for (const s of state.sessions) {
+    if (s.date === today) todayMs += s.duration;
+    if (s.startMs >= weekStart) weekMs += s.duration;
+  }
+  if (state.currentSession) {
+    const live = state.currentSession.mode === 'timer'
+      ? Math.min(Date.now() - state.currentSession.startMs, state.currentSession.durationMs)
+      : Date.now() - state.currentSession.startMs;
+    if (dayKey(state.currentSession.startMs) === today) todayMs += live;
+    if (state.currentSession.startMs >= weekStart) weekMs += live;
+  }
+  els.statToday.textContent = formatDurationShort(todayMs);
+  els.statWeek.textContent = formatDurationShort(weekMs);
+  els.statProjects.textContent = state.projects.length;
+}
+
+function render() {
+  els.modeTrack.dataset.mode = state.mode;
+  els.modeTabs.forEach(t => t.classList.toggle('active', t.dataset.mode === state.mode));
+  renderProjects();
+  renderSessions();
+  renderHeaderStats();
+  syncPresets();
+}
+
+// ---------- Suggestions / autocomplete ----------
+let activeSuggestionIndex = -1;
+let currentSuggestions = [];
+
+function buildSuggestions(query) {
+  const q = query.trim().toLowerCase();
+  const matches = state.projects
+    .filter(p => p.toLowerCase().includes(q))
+    .sort((a,b) => totalsForProject(b).allTime - totalsForProject(a).allTime)
+    .slice(0, 8);
+  const exactMatch = state.projects.some(p => p.toLowerCase() === q);
+  const items = matches.map(name => ({ type: 'existing', name }));
+  if (q && !exactMatch) items.unshift({ type: 'create', name: query.trim() });
+  return items;
+}
+
+function showSuggestions() {
+  currentSuggestions = buildSuggestions(els.projectInput.value);
+  if (currentSuggestions.length === 0) { hideSuggestions(); return; }
+  activeSuggestionIndex = 0;
+  els.suggestions.innerHTML = currentSuggestions.map((s, i) => {
+    if (s.type === 'create') {
+      return `<div class="suggestion create-new ${i === 0 ? 'active' : ''}" data-index="${i}">
+        <span class="suggestion-label"><span class="icon">+</span>Create &ldquo;${escapeHtml(s.name)}&rdquo;</span>
+      </div>`;
+    }
+    const { allTime } = totalsForProject(s.name);
+    return `<div class="suggestion ${i === activeSuggestionIndex ? 'active' : ''}" data-index="${i}">
+      <span class="suggestion-label"><span class="dot" style="background:${colorFor(s.name)}"></span>${escapeHtml(s.name)}</span>
+      <span class="suggestion-meta">${formatDurationShort(allTime)}</span>
+    </div>`;
+  }).join('');
+  els.suggestions.classList.add('visible');
+}
+function hideSuggestions() {
+  els.suggestions.classList.remove('visible');
+  activeSuggestionIndex = -1;
+  currentSuggestions = [];
+}
+function moveSuggestion(delta) {
+  if (currentSuggestions.length === 0) return;
+  activeSuggestionIndex = (activeSuggestionIndex + delta + currentSuggestions.length) % currentSuggestions.length;
+  els.suggestions.querySelectorAll('.suggestion').forEach((el, i) => {
+    el.classList.toggle('active', i === activeSuggestionIndex);
+  });
+}
+function pickActiveSuggestion() {
+  if (activeSuggestionIndex < 0 || activeSuggestionIndex >= currentSuggestions.length) return null;
+  return currentSuggestions[activeSuggestionIndex].name;
+}
+
+// ---------- Events ----------
+els.projectInput.addEventListener('focus', showSuggestions);
+els.projectInput.addEventListener('input', showSuggestions);
+els.projectInput.addEventListener('blur', () => setTimeout(hideSuggestions, 150));
+els.suggestions.addEventListener('mousedown', (e) => {
+  const item = e.target.closest('.suggestion');
+  if (!item) return;
+  const i = Number(item.dataset.index);
+  const pick = currentSuggestions[i];
+  if (pick) {
+    els.projectInput.value = pick.name;
+    hideSuggestions();
+    els.projectInput.focus();
+  }
+});
+els.projectInput.addEventListener('keydown', (e) => {
+  if (e.key === 'ArrowDown') { e.preventDefault(); moveSuggestion(1); }
+  else if (e.key === 'ArrowUp') { e.preventDefault(); moveSuggestion(-1); }
+  else if (e.key === 'Enter') {
+    e.preventDefault();
+    const picked = pickActiveSuggestion();
+    const name = picked || els.projectInput.value.trim();
+    if (name) {
+      hideSuggestions();
+      if (isRunning()) stopCurrent();
+      if (state.mode === 'timer') startTimer(name, readDurationFromInputs());
+      else startStopwatch(name);
+    }
+  } else if (e.key === 'Escape') {
+    if (els.suggestions.classList.contains('visible')) {
+      hideSuggestions();
+    } else {
+      els.projectInput.blur();
+      els.projectInput.value = '';
+    }
+  }
+});
+
+// Click on a project to select / start
+els.projectList.addEventListener('click', (e) => {
+  const del = e.target.closest('[data-delete-project]');
+  if (del) {
+    e.stopPropagation();
+    const name = del.dataset.deleteProject;
+    if (confirm(`Delete project "${name}" and all its sessions?`)) {
+      state.projects = state.projects.filter(p => p !== name);
+      state.sessions = state.sessions.filter(s => s.project !== name);
+      if (state.currentSession && state.currentSession.project === name) {
+        state.currentSession = null;
+        stopTick();
+      }
+      saveState();
+      render();
+    }
+    return;
+  }
+  const item = e.target.closest('.project-item');
+  if (!item) return;
+  const name = item.dataset.project;
+  els.projectInput.value = name;
+  if (!isRunning()) {
+    if (state.mode === 'timer') startTimer(name, readDurationFromInputs());
+    else startStopwatch(name);
+  }
+});
+
+// Delete sessions
+els.sessionList.addEventListener('click', (e) => {
+  const del = e.target.closest('[data-delete-session]');
+  if (!del) return;
+  const id = del.dataset.deleteSession;
+  if (confirm('Delete this session?')) {
+    state.sessions = state.sessions.filter(s => s.id !== id);
+    saveState();
+    render();
+  }
+});
+
+// Global shortcuts
+document.addEventListener('keydown', (e) => {
+  const tag = (e.target.tagName || '').toLowerCase();
+  const isInInput = tag === 'input' || tag === 'textarea';
+
+  if (e.code === 'Space' && !isInInput) {
+    e.preventDefault();
+    if (state.mode === 'timer') toggleTimer(); else toggleStopwatch();
+    return;
+  }
+  if (e.key === '/' && !isInInput) {
+    e.preventDefault();
+    els.projectInput.focus();
+    els.projectInput.select();
+    return;
+  }
+  if ((e.key === 'ArrowLeft' || e.key === 'ArrowRight') && !isInInput) {
+    e.preventDefault();
+    setMode(e.key === 'ArrowLeft' ? 'stopwatch' : 'timer');
+    return;
+  }
+  if (e.key === 'Escape' && isInInput && e.target === els.projectInput && !els.suggestions.classList.contains('visible')) {
+    els.projectInput.blur();
+  }
+});
+
+// Periodic refresh — handles day rollover for stopwatch, etc.
+setInterval(() => {
+  const sess = state.currentSession;
+  if (sess && sess.mode === 'stopwatch') {
+    const startedDay = dayKey(sess.startMs);
+    const today = todayKey();
+    if (startedDay !== today) {
+      const midnight = new Date(); midnight.setHours(0,0,0,0);
+      const cutoff = midnight.getTime();
+      state.sessions.push({
+        id: 'sess_' + cutoff + '_' + Math.random().toString(36).slice(2,7),
+        project: sess.project,
+        startMs: sess.startMs,
+        endMs: cutoff,
+        duration: cutoff - sess.startMs,
+        date: startedDay,
+        mode: 'stopwatch',
+      });
+      state.currentSession = { project: sess.project, startMs: cutoff, mode: 'stopwatch' };
+      saveState();
+    }
+  }
+  render();
+}, 60_000);
+
+// ---------- Init ----------
+writeDurationToInputs(state.timerDurationMs);
+els.modeTrack.classList.add('no-anim');
+els.modeTrack.dataset.mode = state.mode;
+els.modeTabs.forEach(t => t.classList.toggle('active', t.dataset.mode === state.mode));
+// Force reflow then re-enable animation
+void els.modeTrack.offsetWidth;
+requestAnimationFrame(() => els.modeTrack.classList.remove('no-anim'));
+
+if (state.currentSession) startTick();
+if (state.lastProject) els.projectInput.value = state.lastProject;
+render();
+updateTimerDisplay();
+
+window.addEventListener('beforeunload', (e) => {
+  if (state.currentSession) {
+    e.preventDefault();
+    e.returnValue = '';
+  }
+});
+
+document.addEventListener('visibilitychange', () => {
+  // Keep ticking if the floating mini window is open — otherwise it'd freeze.
+  if (document.hidden && !pipWindow) stopTick();
+  else if (state.currentSession) startTick();
+  render();
+});
+</script>
+</body>
+</html>
