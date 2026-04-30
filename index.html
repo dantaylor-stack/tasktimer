@@ -1229,6 +1229,100 @@
 // ---------- Storage ----------
 const STORAGE_KEY = 'task-timer-v1';
 
+// Reasonable upper bounds for sanity-checking persisted/imported data.
+const MAX_PROJECT_NAME_LEN = 200;
+const MAX_DURATION_MS = 24 * 60 * 60 * 1000; // 24h cap on a single timer
+const MIN_TIMER_MS = 1000;                    // 1s floor on a timer
+
+// Generate a collision-resistant session ID. Prefer crypto.randomUUID (universal
+// in modern browsers); fall back to a longer random string if unavailable.
+function newId() {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+  return 'sess_' + Date.now() + '_' + Math.random().toString(36).slice(2, 12);
+}
+
+// ---------- Validation helpers ----------
+function clampNumber(v, min, max, fallback) {
+  if (typeof v !== 'number' || !Number.isFinite(v)) return fallback;
+  if (v < min) return min;
+  if (v > max) return max;
+  return v;
+}
+function safeString(v, maxLen, fallback) {
+  if (typeof v !== 'string') return fallback;
+  return v.length <= maxLen ? v : v.slice(0, maxLen);
+}
+function isValidPersistedSession(s) {
+  return s
+    && typeof s.project === 'string' && s.project.length > 0 && s.project.length <= MAX_PROJECT_NAME_LEN
+    && typeof s.startMs === 'number' && Number.isFinite(s.startMs) && s.startMs > 0
+    && typeof s.duration === 'number' && Number.isFinite(s.duration) && s.duration >= 0
+    && typeof s.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(s.date);
+}
+function validateCurrentSession(cs) {
+  if (!cs || typeof cs !== 'object') return null;
+  if (typeof cs.project !== 'string' || cs.project.length === 0 || cs.project.length > MAX_PROJECT_NAME_LEN) return null;
+  if (typeof cs.startMs !== 'number' || !Number.isFinite(cs.startMs) || cs.startMs <= 0) return null;
+  const mode = cs.mode === 'timer' ? 'timer' : 'stopwatch';
+  const out = { project: cs.project, startMs: cs.startMs, mode };
+  if (mode === 'timer') {
+    const dur = clampNumber(cs.durationMs, MIN_TIMER_MS, MAX_DURATION_MS, null);
+    if (dur === null) return null; // unusable timer state — drop it
+    out.durationMs = dur;
+  }
+  return out;
+}
+function validateLoadedState(parsed) {
+  // Build a map of canonical (case-insensitive, trimmed) project name -> display
+  // form. The first occurrence wins, so a user's display casing is preserved.
+  const projectMap = new Map();
+  const tryAdd = name => {
+    if (typeof name !== 'string') return null;
+    const trimmed = name.trim();
+    if (!trimmed || trimmed.length > MAX_PROJECT_NAME_LEN) return null;
+    const norm = trimmed.toLowerCase();
+    if (!projectMap.has(norm)) projectMap.set(norm, trimmed);
+    return projectMap.get(norm);
+  };
+  if (Array.isArray(parsed.projects)) parsed.projects.forEach(tryAdd);
+
+  // Validate sessions and remap their project names to the canonical display form.
+  // If a session references a project not present in `projects`, auto-add it.
+  const sessions = [];
+  if (Array.isArray(parsed.sessions)) {
+    for (const s of parsed.sessions) {
+      if (!isValidPersistedSession(s)) continue;
+      const canonical = tryAdd(s.project);
+      if (!canonical) continue;
+      sessions.push({
+        ...s,
+        project: canonical,
+        mode: s.mode === 'timer' ? 'timer' : 'stopwatch',
+      });
+    }
+  }
+  const projects = [...projectMap.values()];
+
+  // lastProject should also be canonicalized so it matches what's in `projects`.
+  let lastProject = safeString(parsed.lastProject, MAX_PROJECT_NAME_LEN, '').trim();
+  if (lastProject) {
+    const norm = lastProject.toLowerCase();
+    lastProject = projectMap.get(norm) || lastProject;
+  }
+
+  return {
+    projects,
+    sessions,
+    currentSession: validateCurrentSession(parsed.currentSession),
+    lastProject,
+    mode: (parsed.mode === 'timer' || parsed.mode === 'stopwatch') ? parsed.mode : 'stopwatch',
+    timerDurationMs: clampNumber(parsed.timerDurationMs, MIN_TIMER_MS, MAX_DURATION_MS, 25 * 60 * 1000),
+    chime: migrateChime(parsed.chime),
+  };
+}
+
 function migrateChime(value) {
   // Map removed chime names to the new ones, falling back to cathedral.
   if (value === 'grandfather') return 'single';
@@ -1238,22 +1332,61 @@ function migrateChime(value) {
   return 'cathedral';
 }
 
+// Trim + case-insensitive lookup for projects. If a project with the same
+// normalized form already exists, returns the existing display name (so
+// "Foo" and "foo" stay the same project — first display casing wins).
+// Returns null for empty / oversized names so the caller can flash an error.
+function addOrFindProject(name) {
+  if (typeof name !== 'string') return null;
+  const trimmed = name.trim();
+  if (!trimmed || trimmed.length > MAX_PROJECT_NAME_LEN) return null;
+  const norm = trimmed.toLowerCase();
+  const existing = state.projects.find(p => p.toLowerCase() === norm);
+  if (existing) return existing;
+  state.projects.push(trimmed);
+  return trimmed;
+}
+
+// Tracks whether we've already shown an "unable to save" toast so we don't
+// spam the user once they hit the localStorage quota.
+let saveErrorShown = false;
+// Toasts created during loadState (which runs before showToast/document.body
+// is ready) are queued and flushed at the end of init.
+let pendingNotices = [];
+function notice(msg, kind) {
+  if (typeof showToast === 'function' && document.body) {
+    showToast(msg, kind);
+  } else {
+    pendingNotices.push({ msg, kind });
+  }
+}
+
 function loadState() {
+  let raw;
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return defaultState();
-    const parsed = JSON.parse(raw);
-    return {
-      projects: Array.isArray(parsed.projects) ? parsed.projects : [],
-      sessions: Array.isArray(parsed.sessions) ? parsed.sessions.map(s => ({ ...s, mode: s.mode || 'stopwatch' })) : [],
-      currentSession: parsed.currentSession || null,
-      lastProject: typeof parsed.lastProject === 'string' ? parsed.lastProject : '',
-      mode: (parsed.mode === 'timer' || parsed.mode === 'stopwatch') ? parsed.mode : 'stopwatch',
-      timerDurationMs: typeof parsed.timerDurationMs === 'number' ? parsed.timerDurationMs : 25 * 60 * 1000,
-      chime: migrateChime(parsed.chime),
-    };
+    raw = localStorage.getItem(STORAGE_KEY);
   } catch (e) {
-    console.warn('Failed to load state', e);
+    // localStorage can throw in private modes / when disabled.
+    console.warn('Could not read localStorage', e);
+    notice('Browser storage is unavailable — your work won’t be saved this session.', 'error');
+    return defaultState();
+  }
+  if (!raw) return defaultState();
+
+  let parsed;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (e) {
+    console.warn('Saved data was not valid JSON', e);
+    notice('Saved data was unreadable — starting fresh. (Old data left in place; export a backup if you want to inspect it.)', 'error');
+    return defaultState();
+  }
+  if (!parsed || typeof parsed !== 'object') return defaultState();
+  try {
+    return validateLoadedState(parsed);
+  } catch (e) {
+    console.warn('Failed to validate state', e);
+    notice('Saved data looked corrupted — starting fresh.', 'error');
     return defaultState();
   }
 }
@@ -1271,8 +1404,15 @@ function defaultState() {
 }
 
 function saveState() {
-  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }
-  catch (e) { console.warn('Failed to save state', e); }
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  } catch (e) {
+    console.warn('Failed to save state', e);
+    if (!saveErrorShown) {
+      saveErrorShown = true;
+      notice('Could not save — your browser storage may be full. Export a backup to keep your data safe.', 'error');
+    }
+  }
 }
 
 let state = loadState();
@@ -1510,7 +1650,7 @@ els.modeViewport.addEventListener('touchend', (e) => {
   const t = e.changedTouches[0];
   const dx = t.clientX - touchStart.x;
   const dy = t.clientY - touchStart.y;
-  if (Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy) * 1.4) {
+  if (Math.abs(dx) > 80 && Math.abs(dx) > Math.abs(dy) * 2) {
     if (dx < 0) setMode('timer'); else setMode('stopwatch');
   }
   touchStart = null;
@@ -1529,7 +1669,7 @@ window.addEventListener('pointerup', (e) => {
   if (!pointerStart) return;
   const dx = e.clientX - pointerStart.x;
   const dy = e.clientY - pointerStart.y;
-  if (Math.abs(dx) > 80 && Math.abs(dx) > Math.abs(dy) * 1.6) {
+  if (Math.abs(dx) > 100 && Math.abs(dx) > Math.abs(dy) * 2.5) {
     if (dx < 0) setMode('timer'); else setMode('stopwatch');
   }
   pointerStart = null;
@@ -1541,34 +1681,108 @@ let tickHandle = null;
 function isRunning() { return !!state.currentSession; }
 function isRunningInMode(mode) { return state.currentSession && state.currentSession.mode === mode; }
 
+// If the active session started on a previous calendar day, split it at each
+// midnight that has passed. Splits at the actual day boundary (computed from
+// sess.startMs) rather than at the moment this function happens to run, and
+// loops in case multiple midnights have passed (e.g., laptop slept overnight).
+// Returns true iff at least one split occurred.
+function maybeSplitAtMidnight() {
+  let didSplit = false;
+  // Safety: cap the loop so a clock-skew bug can never spin forever.
+  for (let safety = 0; safety < 60; safety++) {
+    const sess = state.currentSession;
+    if (!sess) break;
+    const startedDay = dayKey(sess.startMs);
+    if (startedDay === todayKey()) break;
+
+    const startDate = new Date(sess.startMs);
+    const cutoff = new Date(
+      startDate.getFullYear(),
+      startDate.getMonth(),
+      startDate.getDate() + 1, // start of the day AFTER the start day
+      0, 0, 0, 0
+    ).getTime();
+    if (!Number.isFinite(cutoff) || cutoff <= sess.startMs || cutoff > Date.now()) break;
+
+    if (sess.mode === 'stopwatch') {
+      state.sessions.push({
+        id: newId(),
+        project: sess.project,
+        startMs: sess.startMs,
+        endMs: cutoff,
+        duration: cutoff - sess.startMs,
+        date: startedDay,
+        mode: 'stopwatch',
+      });
+      state.currentSession = { project: sess.project, startMs: cutoff, mode: 'stopwatch' };
+    } else {
+      // Timer mode: record the portion that elapsed before midnight, then
+      // continue the timer with the remaining duration. If the timer would
+      // have already finished before midnight, end it on the start day and
+      // play the chime.
+      const elapsed = cutoff - sess.startMs;
+      if (elapsed >= sess.durationMs) {
+        state.sessions.push({
+          id: newId(),
+          project: sess.project,
+          startMs: sess.startMs,
+          endMs: sess.startMs + sess.durationMs,
+          duration: sess.durationMs,
+          date: startedDay,
+          mode: 'timer',
+        });
+        state.currentSession = null;
+        didSplit = true;
+        break;
+      }
+      state.sessions.push({
+        id: newId(),
+        project: sess.project,
+        startMs: sess.startMs,
+        endMs: cutoff,
+        duration: elapsed,
+        date: startedDay,
+        mode: 'timer',
+      });
+      state.currentSession = {
+        project: sess.project,
+        startMs: cutoff,
+        mode: 'timer',
+        durationMs: sess.durationMs - elapsed,
+      };
+    }
+    didSplit = true;
+  }
+  if (didSplit) saveState();
+  return didSplit;
+}
+
 function startStopwatch(projectName) {
-  const name = (projectName || '').trim();
-  if (!name) { flashInput(); return; }
-  if (!state.projects.includes(name)) state.projects.push(name);
-  state.lastProject = name;
-  state.currentSession = { project: name, startMs: Date.now(), mode: 'stopwatch' };
+  const canonical = addOrFindProject(projectName);
+  if (!canonical) { flashInput(); return; }
+  state.lastProject = canonical;
+  state.currentSession = { project: canonical, startMs: Date.now(), mode: 'stopwatch' };
   ensureAudio();
   saveState();
-  els.projectInput.value = name;
+  els.projectInput.value = canonical;
   hideSuggestions();
   startTick();
   render();
 }
 
 function startTimer(projectName, durationMs) {
-  const name = (projectName || '').trim();
-  if (!name) { flashInput(); return; }
   if (durationMs <= 0) {
     flashTimerEdit();
     return;
   }
-  if (!state.projects.includes(name)) state.projects.push(name);
-  state.lastProject = name;
+  const canonical = addOrFindProject(projectName);
+  if (!canonical) { flashInput(); return; }
+  state.lastProject = canonical;
   state.timerDurationMs = durationMs;
-  state.currentSession = { project: name, startMs: Date.now(), mode: 'timer', durationMs };
+  state.currentSession = { project: canonical, startMs: Date.now(), mode: 'timer', durationMs };
   ensureAudio();
   saveState();
-  els.projectInput.value = name;
+  els.projectInput.value = canonical;
   hideSuggestions();
   startTick();
   render();
@@ -1585,7 +1799,7 @@ function stopCurrent(opts) {
   }
   if (recorded >= 1000) {
     state.sessions.push({
-      id: 'sess_' + endMs + '_' + Math.random().toString(36).slice(2,7),
+      id: newId(),
       project,
       startMs,
       endMs: startMs + recorded,
@@ -1637,6 +1851,12 @@ function stopTick() {
 }
 
 function updateTimerDisplay() {
+  // If the session straddled one or more midnights, split it now. After a
+  // split, state.currentSession.startMs is "today's" boundary (or null if
+  // the timer expired on a prior day), so the rest of the function renders
+  // correctly.
+  if (maybeSplitAtMidnight()) render();
+
   const sess = state.currentSession;
 
   // STOPWATCH VIEW
@@ -1942,31 +2162,36 @@ function importData() {
     );
     if (!ok) return;
 
-    // Merge projects (dedupe by name)
-    const projectSet = new Set(state.projects);
-    incoming.projects.forEach(p => { if (typeof p === 'string' && p.trim()) projectSet.add(p); });
+    // Merge projects with case-insensitive dedup (preserves first display casing).
+    incoming.projects.forEach(p => addOrFindProject(p));
 
-    // Merge sessions (dedupe by id; assign new id if missing)
-    const existingIds = new Set(state.sessions.map(s => s.id));
+    // Merge sessions. We always regenerate IDs on import so a malicious or
+    // malformed backup can't smuggle attacker-controlled values into our DOM
+    // attributes. Dedup is done on a content tuple (project, startMs, duration)
+    // rather than on ID — this also catches duplicates across re-imports of
+    // the same backup. Project names are canonicalized first so that "Foo"
+    // and "foo" don't create siblings.
+    const tupleKey = s => s.project.toLowerCase() + '|' + s.startMs + '|' + s.duration;
+    const existingTuples = new Set(state.sessions.map(tupleKey));
     let added = 0;
     incomingSessions.forEach(s => {
-      const id = s.id || ('sess_' + s.startMs + '_' + Math.random().toString(36).slice(2,7));
-      if (existingIds.has(id)) return;
-      // Make sure every project referenced exists in the project set
-      projectSet.add(s.project);
+      const canonical = addOrFindProject(s.project);
+      if (!canonical) return; // empty/oversized — skip
+      const remapped = { ...s, project: canonical };
+      const key = tupleKey(remapped);
+      if (existingTuples.has(key)) return;
       state.sessions.push({
-        id,
-        project: s.project,
+        id: newId(),
+        project: canonical,
         startMs: s.startMs,
-        endMs: typeof s.endMs === 'number' ? s.endMs : s.startMs + s.duration,
+        endMs: typeof s.endMs === 'number' && Number.isFinite(s.endMs) ? s.endMs : s.startMs + s.duration,
         duration: s.duration,
         date: s.date,
         mode: s.mode === 'timer' ? 'timer' : 'stopwatch',
       });
-      existingIds.add(id);
+      existingTuples.add(key);
       added++;
     });
-    state.projects = [...projectSet];
 
     saveState();
     render();
@@ -2031,6 +2256,10 @@ async function popOut() {
     pipWindow = null;
     els.pipBtn.classList.remove('active');
     els.pipBtn.title = 'Pop out as floating mini timer';
+    // The tick was kept alive while PiP was open even if the main tab was
+    // hidden. If we're returning to a hidden main tab, stop ticking now —
+    // the visibilitychange handler won't fire again until the tab is shown.
+    if (document.hidden) stopTick();
     updateTimerDisplay();
   });
 
@@ -2041,6 +2270,17 @@ els.pipBtn.addEventListener('click', popOut);
 // ---------- Rendering ----------
 function escapeHtml(s) {
   return String(s).replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+}
+
+// Wholesale innerHTML replacement resets scrollTop. Capture it before the
+// rebuild and restore it afterwards so the user doesn't get jumped to the
+// top every minute when the periodic refresh fires.
+function setInnerHtmlPreservingScroll(el, html) {
+  if (!el) return;
+  const top = el.scrollTop;
+  el.innerHTML = html;
+  // Restore on the next frame so the browser has finished layout.
+  if (top) requestAnimationFrame(() => { el.scrollTop = top; });
 }
 
 function totalsForProject(name) {
@@ -2067,11 +2307,11 @@ function totalsForProject(name) {
 function renderProjects() {
   const names = [...state.projects].sort((a,b) => totalsForProject(b).allTime - totalsForProject(a).allTime);
   if (names.length === 0) {
-    els.projectList.innerHTML = `<div class="empty-state">No projects yet.<br>Type a name above and hit Start.</div>`;
+    setInnerHtmlPreservingScroll(els.projectList, `<div class="empty-state">No projects yet.<br>Type a name above and hit Start.</div>`);
     return;
   }
   const activeName = state.currentSession ? state.currentSession.project : null;
-  els.projectList.innerHTML = names.map(name => {
+  const html = names.map(name => {
     const { allTime, todayTotal } = totalsForProject(name);
     const isActive = name === activeName;
     return `
@@ -2085,6 +2325,7 @@ function renderProjects() {
         <button class="delete-x" data-delete-project="${escapeHtml(name)}" title="Delete project and its sessions">×</button>
       </div>`;
   }).join('');
+  setInnerHtmlPreservingScroll(els.projectList, html);
 }
 
 function renderSessions() {
@@ -2095,7 +2336,7 @@ function renderSessions() {
   }
   const days = [...byDay.keys()].sort().reverse();
   if (days.length === 0 && !state.currentSession) {
-    els.sessionList.innerHTML = `<div class="empty-state">No sessions yet today.</div>`;
+    setInnerHtmlPreservingScroll(els.sessionList, `<div class="empty-state">No sessions yet today.</div>`);
     els.sessionPanelMeta.textContent = '';
     return;
   }
@@ -2124,12 +2365,12 @@ function renderSessions() {
         <span class="name">${escapeHtml(s.project)}</span>
         <span class="time">${formatClock(s.startMs)}</span>
         <span class="duration">${formatDurationShort(s.duration)}</span>
-        <button class="delete-x" data-delete-session="${s.id}" title="Delete session">×</button>
+        <button class="delete-x" data-delete-session="${escapeHtml(s.id)}" title="Delete session">×</button>
       </div>`;
     }
     html += `</div>`;
   }
-  els.sessionList.innerHTML = html;
+  setInnerHtmlPreservingScroll(els.sessionList, html);
 }
 
 function renderHeaderStats() {
@@ -2232,6 +2473,7 @@ els.projectInput.addEventListener('keydown', (e) => {
   else if (e.key === 'ArrowUp') { e.preventDefault(); moveSuggestion(-1); }
   else if (e.key === 'Enter') {
     e.preventDefault();
+    if (e.repeat) return; // ignore key auto-repeat so holding Enter doesn't flap start/stop
     const picked = pickActiveSuggestion();
     const name = picked || els.projectInput.value.trim();
     if (name) {
@@ -2297,6 +2539,7 @@ document.addEventListener('keydown', (e) => {
 
   if (e.code === 'Space' && !isInInput) {
     e.preventDefault();
+    if (e.repeat) return; // holding Space shouldn't flap start/stop
     if (state.mode === 'timer') toggleTimer(); else toggleStopwatch();
     return;
   }
@@ -2316,28 +2559,11 @@ document.addEventListener('keydown', (e) => {
   }
 });
 
-// Periodic refresh — handles day rollover for stopwatch, etc.
+// Periodic refresh — keeps "Today/Yesterday" headers and live header stats
+// fresh even when no tick is running. Midnight splits are handled both here
+// (as a safety net for idle states) and on every tick (for accuracy).
 setInterval(() => {
-  const sess = state.currentSession;
-  if (sess && sess.mode === 'stopwatch') {
-    const startedDay = dayKey(sess.startMs);
-    const today = todayKey();
-    if (startedDay !== today) {
-      const midnight = new Date(); midnight.setHours(0,0,0,0);
-      const cutoff = midnight.getTime();
-      state.sessions.push({
-        id: 'sess_' + cutoff + '_' + Math.random().toString(36).slice(2,7),
-        project: sess.project,
-        startMs: sess.startMs,
-        endMs: cutoff,
-        duration: cutoff - sess.startMs,
-        date: startedDay,
-        mode: 'stopwatch',
-      });
-      state.currentSession = { project: sess.project, startMs: cutoff, mode: 'stopwatch' };
-      saveState();
-    }
-  }
+  maybeSplitAtMidnight();
   render();
 }, 60_000);
 
@@ -2354,6 +2580,13 @@ if (state.currentSession) startTick();
 if (state.lastProject) els.projectInput.value = state.lastProject;
 render();
 updateTimerDisplay();
+
+// Flush any toasts queued by loadState (which ran before showToast existed).
+if (pendingNotices.length) {
+  const queued = pendingNotices;
+  pendingNotices = [];
+  queued.forEach(n => showToast(n.msg, n.kind));
+}
 
 window.addEventListener('beforeunload', (e) => {
   if (state.currentSession) {
