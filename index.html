@@ -1179,6 +1179,98 @@
     white-space: nowrap;
   }
   .mini-project.idle { color: var(--gray-500); font-style: italic; text-transform: none; letter-spacing: 0; font-family: var(--font-serif); font-size: 12px; }
+  .mini-project-btn {
+    background: none;
+    border: none;
+    padding: 2px 8px;
+    margin: 0;
+    border-radius: 6px;
+    color: inherit;
+    font: inherit;
+    cursor: pointer;
+    transition: background 0.12s;
+    max-width: 220px;
+    overflow: hidden;
+    display: inline-flex;
+    align-items: center;
+  }
+  .mini-project-btn:hover { background: var(--purple-soft); }
+  .mini-project-btn:focus-visible { outline: 1px solid var(--border-strong); outline-offset: 1px; }
+
+  /* Project picker overlay (shown over the mini view) */
+  .mini-picker {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 10;
+    background: rgba(20, 18, 30, 0.92);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    border-radius: 8px;
+    padding: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .mini-picker[hidden] { display: none !important; }
+  .mini-picker-input {
+    width: 100%;
+    padding: 8px 10px;
+    background: rgba(0, 0, 0, 0.35);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--gray-100);
+    font-family: var(--font-serif);
+    font-size: 14px;
+    outline: none;
+    flex-shrink: 0;
+  }
+  .mini-picker-input:focus { border-color: var(--border-strong); }
+  .mini-picker-list {
+    flex: 1;
+    overflow-y: auto;
+    min-height: 0;
+  }
+  .mini-picker-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 8px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 13px;
+    line-height: 1.2;
+    color: var(--gray-100);
+    text-align: left;
+  }
+  .mini-picker-item:hover,
+  .mini-picker-item.active { background: var(--purple-soft); }
+  .mini-picker-item .dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+  .mini-picker-item.current { color: var(--gray-400); }
+  .mini-picker-item.current::after {
+    content: '•';
+    margin-left: auto;
+    color: var(--turquoise);
+  }
+  .mini-picker-item.create-new {
+    margin-top: 2px;
+    border-top: 1px solid var(--border);
+    padding-top: 8px;
+    color: var(--turquoise-glow);
+  }
+  .mini-picker-empty {
+    padding: 6px 4px;
+    color: var(--gray-500);
+    font-size: 12px;
+    font-style: italic;
+  }
 
   .mini-display {
     font-family: var(--font-serif);
@@ -1377,10 +1469,18 @@
   <div id="miniContainer" class="mini-container">
     <div class="mini-header">
       <span class="mini-mode-icon" id="miniMode">⏱</span>
-      <span class="mini-project" id="miniProject">No project yet</span>
+      <button class="mini-project-btn" id="miniProjectBtn" type="button" title="Click to switch project">
+        <span class="mini-project" id="miniProject">No project yet</span>
+      </button>
     </div>
     <div class="mini-display" id="miniDisplay">00:00:00</div>
     <button class="mini-btn" id="miniBtn">Start</button>
+
+    <!-- Project picker overlay shown when the project name is clicked -->
+    <div class="mini-picker" id="miniPicker" hidden>
+      <input class="mini-picker-input" id="miniPickerInput" type="text" placeholder="Switch project…" autocomplete="off" spellcheck="false">
+      <div class="mini-picker-list" id="miniPickerList"></div>
+    </div>
   </div>
 </div>
 
@@ -1762,8 +1862,12 @@ const els = {
   miniContainer: document.getElementById('miniContainer'),
   miniMode: document.getElementById('miniMode'),
   miniProject: document.getElementById('miniProject'),
+  miniProjectBtn: document.getElementById('miniProjectBtn'),
   miniDisplay: document.getElementById('miniDisplay'),
   miniBtn: document.getElementById('miniBtn'),
+  miniPicker: document.getElementById('miniPicker'),
+  miniPickerInput: document.getElementById('miniPickerInput'),
+  miniPickerList: document.getElementById('miniPickerList'),
 };
 
 // ---------- Audio (chime) ----------
@@ -2296,7 +2400,7 @@ function updateMini() {
       els.miniProject.textContent = state.lastProject;
       els.miniProject.classList.remove('idle');
     } else {
-      els.miniProject.textContent = 'Pick a project in main window';
+      els.miniProject.textContent = 'Click to pick a project';
       els.miniProject.classList.add('idle');
     }
     els.miniMode.textContent = state.mode === 'timer' ? '⏳' : '⏱';
@@ -2408,6 +2512,148 @@ els.miniBtn.addEventListener('click', () => {
     if (state.mode === 'timer') startTimer(state.lastProject, state.timerDurationMs);
     else startStopwatch(state.lastProject);
   }
+});
+
+// ---------- Mini project picker (PiP / pop-out view) ----------
+// Lets the user switch projects without returning to the main window. If a
+// session is currently running, picking a new project stops the current one
+// (preserving its recorded time) and starts a fresh session on the new
+// project in the same mode.
+let miniPickerOpen = false;
+let miniPickerActiveIndex = 0;
+let miniPickerVisibleItems = []; // [{ name, type: 'existing'|'create' }]
+
+function openMiniPicker() {
+  if (miniPickerOpen) return;
+  miniPickerOpen = true;
+  miniPickerActiveIndex = 0;
+  els.miniPickerInput.value = '';
+  els.miniPicker.hidden = false;
+  renderMiniPicker();
+  // Focus inside whichever document the picker currently lives in (might be
+  // the PiP window's document if popped out).
+  setTimeout(() => { try { els.miniPickerInput.focus(); } catch (e) {} }, 0);
+  // Capture-phase mousedown lets us close on outside clicks within the same
+  // document (main page or PiP window — both share this DOM tree).
+  setTimeout(() => {
+    const doc = els.miniPicker.ownerDocument;
+    doc.addEventListener('mousedown', onMiniPickerOutside, true);
+  }, 0);
+}
+
+function closeMiniPicker() {
+  if (!miniPickerOpen) return;
+  miniPickerOpen = false;
+  els.miniPicker.hidden = true;
+  miniPickerVisibleItems = [];
+  const doc = els.miniPicker.ownerDocument;
+  doc.removeEventListener('mousedown', onMiniPickerOutside, true);
+}
+
+function onMiniPickerOutside(e) {
+  if (!miniPickerOpen) return;
+  if (!els.miniPicker.contains(e.target)) closeMiniPicker();
+}
+
+function renderMiniPicker() {
+  const q = els.miniPickerInput.value.trim().toLowerCase();
+  const matches = state.projects
+    .filter(p => p.toLowerCase().includes(q))
+    .sort((a, b) => totalsForProject(b).allTime - totalsForProject(a).allTime)
+    .slice(0, 30);
+  miniPickerVisibleItems = matches.map(name => ({ name, type: 'existing' }));
+  const typed = els.miniPickerInput.value.trim();
+  if (typed && !matches.some(p => p.toLowerCase() === typed.toLowerCase())) {
+    miniPickerVisibleItems.push({ name: typed, type: 'create' });
+  }
+  if (miniPickerVisibleItems.length === 0) {
+    els.miniPickerList.innerHTML = '<div class="mini-picker-empty">No projects yet. Type a name to create one.</div>';
+    miniPickerActiveIndex = -1;
+    return;
+  }
+  if (miniPickerActiveIndex >= miniPickerVisibleItems.length || miniPickerActiveIndex < 0) {
+    miniPickerActiveIndex = 0;
+  }
+  const currentProject = state.currentSession ? state.currentSession.project : state.lastProject;
+  els.miniPickerList.innerHTML = miniPickerVisibleItems.map((it, i) => {
+    const isCurrent = it.type === 'existing' && it.name === currentProject;
+    if (it.type === 'create') {
+      return '<div class="mini-picker-item create-new ' + (i === miniPickerActiveIndex ? 'active' : '') + '" data-index="' + i + '">'
+        + '<span class="dot" style="background:' + colorFor(it.name) + '"></span>'
+        + 'Create &ldquo;' + escapeHtml(it.name) + '&rdquo;'
+        + '</div>';
+    }
+    return '<div class="mini-picker-item ' + (isCurrent ? 'current' : '') + ' ' + (i === miniPickerActiveIndex ? 'active' : '') + '" data-index="' + i + '">'
+      + '<span class="dot" style="background:' + colorFor(it.name) + '"></span>'
+      + escapeHtml(it.name)
+      + '</div>';
+  }).join('');
+}
+
+function pickMiniProject(index) {
+  const it = miniPickerVisibleItems[index];
+  if (!it) return;
+  const canonical = addOrFindProject(it.name);
+  if (!canonical) {
+    els.miniPickerInput.style.borderColor = 'var(--danger)';
+    setTimeout(() => { els.miniPickerInput.style.borderColor = ''; }, 600);
+    return;
+  }
+  const wasRunning = !!state.currentSession;
+  const previousMode = state.mode;
+  if (wasRunning) {
+    // Stop the current session so the time on the previous project is
+    // preserved, then start fresh on the new project in the same mode.
+    stopCurrent();
+    if (previousMode === 'timer') startTimer(canonical, state.timerDurationMs);
+    else startStopwatch(canonical);
+    showToast('Switched to "' + canonical + '"', 'success');
+  } else {
+    // No session running — just remember this as the next project to start.
+    state.lastProject = canonical;
+    saveState();
+    render();
+    updateMini();
+    showToast('Project set to "' + canonical + '"', 'success');
+  }
+  closeMiniPicker();
+}
+
+els.miniProjectBtn.addEventListener('click', (e) => {
+  e.preventDefault();
+  e.stopPropagation();
+  if (miniPickerOpen) closeMiniPicker(); else openMiniPicker();
+});
+els.miniPickerInput.addEventListener('input', () => {
+  miniPickerActiveIndex = 0;
+  renderMiniPicker();
+});
+els.miniPickerInput.addEventListener('keydown', (e) => {
+  if (e.key === 'ArrowDown') {
+    e.preventDefault();
+    if (miniPickerVisibleItems.length) {
+      miniPickerActiveIndex = (miniPickerActiveIndex + 1) % miniPickerVisibleItems.length;
+      renderMiniPicker();
+    }
+  } else if (e.key === 'ArrowUp') {
+    e.preventDefault();
+    if (miniPickerVisibleItems.length) {
+      miniPickerActiveIndex = (miniPickerActiveIndex - 1 + miniPickerVisibleItems.length) % miniPickerVisibleItems.length;
+      renderMiniPicker();
+    }
+  } else if (e.key === 'Enter') {
+    e.preventDefault();
+    if (miniPickerActiveIndex >= 0) pickMiniProject(miniPickerActiveIndex);
+  } else if (e.key === 'Escape') {
+    e.preventDefault();
+    closeMiniPicker();
+  }
+});
+els.miniPickerList.addEventListener('mousedown', (e) => {
+  const item = e.target.closest('.mini-picker-item');
+  if (!item) return;
+  e.preventDefault(); // keep focus on input
+  pickMiniProject(Number(item.dataset.index));
 });
 
 // ---------- Export / Import ----------
@@ -2558,6 +2804,10 @@ if (!pipSupported) {
 async function popOut() {
   if (pipWindow) { pipWindow.close(); return; }
   if (!pipSupported) return;
+  // Close the project picker if it was open in the old document — its
+  // outside-click listener is bound to a specific document, and we're about
+  // to move the container into a different one.
+  closeMiniPicker();
   try {
     pipWindow = await documentPictureInPicture.requestWindow({ width: 320, height: 200 });
   } catch (e) { pipWindow = null; return; }
@@ -2581,6 +2831,7 @@ async function popOut() {
 
   // When user closes the PiP window, return the element home
   pipWindow.addEventListener('pagehide', () => {
+    closeMiniPicker();
     els.pipHidden.appendChild(els.miniContainer);
     pipWindow = null;
     els.pipBtn.classList.remove('active');
