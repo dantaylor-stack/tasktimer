@@ -741,6 +741,31 @@
     text-align: right;
     font-size: 16px;
   }
+  /* Click a session's duration to edit the recorded time */
+  .session-duration-btn {
+    background: none;
+    border: none;
+    padding: 2px 6px;
+    margin: 0 -6px;
+    border-radius: 6px;
+    color: var(--turquoise-glow);
+    font: inherit;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    font-size: 16px;
+    min-width: 70px;
+    text-align: right;
+    cursor: pointer;
+    transition: background 0.12s, color 0.12s;
+  }
+  .session-duration-btn:hover {
+    background: var(--turquoise-soft);
+    color: var(--turquoise);
+  }
+  .session-duration-btn:focus-visible {
+    outline: 1px solid var(--border-strong);
+    outline-offset: 1px;
+  }
   .session-row .delete-x {
     opacity: 0;
     color: var(--gray-500);
@@ -980,6 +1005,104 @@
     color: var(--gray-500);
     font-size: 14px;
     font-style: italic;
+  }
+
+  /* Duration editor (compact H:M:S inputs inside session editor popover) */
+  .duration-editor-row {
+    display: flex;
+    align-items: baseline;
+    justify-content: center;
+    gap: 4px;
+    margin: 6px 0 10px;
+    font-variant-numeric: tabular-nums;
+  }
+  .duration-segment {
+    background: rgba(0, 0, 0, 0.25);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--gray-100);
+    font-family: var(--font-serif);
+    font-size: 28px;
+    font-weight: 400;
+    width: 2.2em;
+    text-align: center;
+    padding: 6px 4px;
+    outline: none;
+    -moz-appearance: textfield;
+    line-height: 1;
+    transition: border-color 0.15s, background 0.15s;
+  }
+  .duration-segment::-webkit-outer-spin-button,
+  .duration-segment::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
+  .duration-segment:focus {
+    border-color: var(--border-strong);
+    background: rgba(64, 224, 208, 0.08);
+    color: var(--turquoise-glow);
+  }
+  .duration-segment-label {
+    font-family: var(--font-display);
+    font-size: 9px;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    color: var(--gray-500);
+    text-align: center;
+    margin-top: 2px;
+  }
+  .duration-segment-cell {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+  .duration-colon {
+    font-family: var(--font-serif);
+    font-size: 24px;
+    color: var(--gray-500);
+    padding: 0 2px;
+    align-self: center;
+    margin-top: -10px;
+  }
+  .duration-editor-actions {
+    display: flex;
+    gap: 8px;
+    justify-content: flex-end;
+    margin-top: 6px;
+  }
+  .duration-editor-btn {
+    background: var(--purple-soft);
+    border: 1px solid var(--border);
+    color: var(--gray-100);
+    font-family: var(--font-display);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    padding: 7px 14px;
+    border-radius: 7px;
+    cursor: pointer;
+    transition: background 0.12s, border-color 0.12s, color 0.12s;
+  }
+  .duration-editor-btn:hover {
+    background: var(--purple-soft);
+    border-color: var(--border-strong);
+    color: var(--purple-glow);
+  }
+  .duration-editor-btn.primary {
+    background: var(--turquoise-soft);
+    color: var(--turquoise-glow);
+  }
+  .duration-editor-btn.primary:hover {
+    background: rgba(64, 224, 208, 0.2);
+    border-color: var(--turquoise);
+    color: var(--turquoise);
+  }
+  .duration-editor-hint {
+    font-size: 12px;
+    color: var(--gray-500);
+    font-style: italic;
+    text-align: center;
+    margin-bottom: 4px;
   }
 
   /* ---------- Mini (Picture-in-Picture) view ---------- */
@@ -2570,7 +2693,7 @@ function renderSessions() {
         <span class="mode-icon" title="${s.mode}">${icon}</span>
         <button class="session-name-btn name" data-edit-session="${escapeHtml(s.id)}" title="Click to reassign to a different project">${escapeHtml(s.project)}</button>
         <span class="time">${formatClock(s.startMs)}</span>
-        <span class="duration">${formatDurationShort(s.duration)}</span>
+        <button class="session-duration-btn" data-edit-duration="${escapeHtml(s.id)}" title="Click to edit recorded time">${formatDurationShort(s.duration)}</button>
         <button class="delete-x" data-delete-session="${escapeHtml(s.id)}" title="Delete session">×</button>
       </div>`;
     }
@@ -2744,6 +2867,13 @@ els.sessionList.addEventListener('click', (e) => {
     const id = edit.dataset.editSession;
     const session = state.sessions.find(s => s.id === id);
     if (session) openSessionEditor(session, edit);
+    return;
+  }
+  const editDur = e.target.closest('[data-edit-duration]');
+  if (editDur) {
+    const id = editDur.dataset.editDuration;
+    const session = state.sessions.find(s => s.id === id);
+    if (session) openDurationEditor(session, editDur);
   }
 });
 
@@ -2889,6 +3019,133 @@ function commitProjectChange(sessionId, newProjectName) {
   closeSessionEditor();
   render();
   showToast('Reassigned to "' + canonical + '" (was "' + prev + '")', 'success');
+}
+
+// ---------- Duration editor popover ----------
+// Lets the user manually adjust a recorded session's time — useful when they
+// forget to stop the timer and the recorded duration doesn't match reality.
+function openDurationEditor(session, anchorEl) {
+  closeSessionEditor();
+  sessionEditorTarget = { kind: 'duration', id: session.id };
+
+  const totalSec = Math.max(0, Math.floor(session.duration / 1000));
+  const initH = Math.floor(totalSec / 3600);
+  const initM = Math.floor((totalSec % 3600) / 60);
+  const initS = totalSec % 60;
+
+  const popover = document.createElement('div');
+  popover.className = 'session-editor';
+  popover.innerHTML =
+    '<div class="session-editor-label">Edit recorded time</div>'
+    + '<div class="duration-editor-hint">Adjust if the timer ran longer than the actual work.</div>'
+    + '<div class="duration-editor-row">'
+    +   '<div class="duration-segment-cell">'
+    +     '<input class="duration-segment" id="durEditH" type="text" inputmode="numeric" maxlength="3" value="' + String(initH).padStart(2,'0') + '" aria-label="Hours">'
+    +     '<div class="duration-segment-label">hrs</div>'
+    +   '</div>'
+    +   '<span class="duration-colon">:</span>'
+    +   '<div class="duration-segment-cell">'
+    +     '<input class="duration-segment" id="durEditM" type="text" inputmode="numeric" maxlength="2" value="' + String(initM).padStart(2,'0') + '" aria-label="Minutes">'
+    +     '<div class="duration-segment-label">min</div>'
+    +   '</div>'
+    +   '<span class="duration-colon">:</span>'
+    +   '<div class="duration-segment-cell">'
+    +     '<input class="duration-segment" id="durEditS" type="text" inputmode="numeric" maxlength="2" value="' + String(initS).padStart(2,'0') + '" aria-label="Seconds">'
+    +     '<div class="duration-segment-label">sec</div>'
+    +   '</div>'
+    + '</div>'
+    + '<div class="duration-editor-actions">'
+    +   '<button type="button" class="duration-editor-btn" data-action="cancel">Cancel</button>'
+    +   '<button type="button" class="duration-editor-btn primary" data-action="save">Save</button>'
+    + '</div>';
+  document.body.appendChild(popover);
+  sessionEditor = popover;
+  positionEditor(popover, anchorEl);
+
+  const hEl = popover.querySelector('#durEditH');
+  const mEl = popover.querySelector('#durEditM');
+  const sEl = popover.querySelector('#durEditS');
+  const inputs = [hEl, mEl, sEl];
+
+  function readMs() {
+    const h = parseInt(hEl.value, 10) || 0;
+    const m = parseInt(mEl.value, 10) || 0;
+    const s = parseInt(sEl.value, 10) || 0;
+    return ((h * 3600) + (m * 60) + s) * 1000;
+  }
+
+  function commit() {
+    const newMs = readMs();
+    commitDurationChange(session.id, newMs);
+  }
+
+  // Select-on-focus so typing replaces the value cleanly.
+  inputs.forEach(inp => {
+    inp.addEventListener('focus', () => setTimeout(() => inp.select(), 0));
+    inp.addEventListener('input', () => {
+      // Strip non-digits.
+      inp.value = inp.value.replace(/[^0-9]/g, '');
+    });
+    inp.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') { e.preventDefault(); commit(); }
+      else if (e.key === 'Escape') { e.preventDefault(); closeSessionEditor(); }
+      else if (e.key === 'Tab') { /* default behavior */ }
+      else if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+        e.preventDefault();
+        const cur = parseInt(inp.value, 10) || 0;
+        const max = inp === hEl ? 23 : 59;
+        let next = cur + (e.key === 'ArrowUp' ? 1 : -1);
+        if (next < 0) next = 0;
+        if (next > max) next = max;
+        inp.value = String(next).padStart(2, '0');
+      }
+    });
+    inp.addEventListener('blur', () => {
+      const n = parseInt(inp.value, 10) || 0;
+      const max = inp === hEl ? 23 : 59;
+      const clamped = Math.max(0, Math.min(max, n));
+      inp.value = String(clamped).padStart(2, '0');
+    });
+  });
+
+  popover.querySelector('[data-action="save"]').addEventListener('click', (e) => {
+    e.preventDefault();
+    commit();
+  });
+  popover.querySelector('[data-action="cancel"]').addEventListener('click', (e) => {
+    e.preventDefault();
+    closeSessionEditor();
+  });
+
+  // Auto-focus the minutes field — the most common edit.
+  setTimeout(() => { mEl.focus(); mEl.select(); }, 0);
+
+  // Close when clicking outside, scrolling, or resizing.
+  setTimeout(() => {
+    document.addEventListener('mousedown', onClickOutsideEditor, true);
+    window.addEventListener('resize', closeSessionEditor);
+    window.addEventListener('scroll', closeSessionEditor, true);
+  }, 0);
+}
+
+function commitDurationChange(sessionId, newDurationMs) {
+  const session = state.sessions.find(s => s.id === sessionId);
+  if (!session) { closeSessionEditor(); return; }
+
+  // Clamp to sane bounds: 0 (allowed — user might want to zero out a stray
+  // entry) up to MAX_DURATION_MS (24h cap to match new-timer limits).
+  let clamped = Math.max(0, Math.min(MAX_DURATION_MS, Math.floor(newDurationMs)));
+
+  if (clamped === session.duration) { closeSessionEditor(); return; }
+
+  const prev = session.duration;
+  session.duration = clamped;
+  // Keep endMs consistent with the new duration.
+  session.endMs = session.startMs + clamped;
+  saveState();
+  closeSessionEditor();
+  render();
+  showToast('Time updated: ' + formatDurationShort(prev) + ' → ' + formatDurationShort(clamped), 'success');
 }
 
 // Global shortcuts
