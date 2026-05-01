@@ -3487,6 +3487,64 @@ document.addEventListener('visibilitychange', () => {
   render();
 });
 
+// ---------- Cross-window sync ----------
+// localStorage is shared across same-origin windows in the same browser, but
+// each window only loads state once at startup. Without this listener, two
+// windows silently diverge — and whichever saves last clobbers the other's
+// writes. The browser fires a 'storage' event on OTHER windows whenever any
+// window writes to it; we use that as a cue to refresh.
+//
+// Concurrency note: if two windows independently start a session at the same
+// moment, last-writer-wins on `currentSession`. Concurrent live timers
+// across windows aren't a first-class supported scenario.
+window.addEventListener('storage', (e) => {
+  if (e.key !== STORAGE_KEY) return;
+  if (e.newValue === null) return; // someone cleared storage entirely; ignore
+
+  const prevSession = state.currentSession;
+  state = loadState();
+  const newSession = state.currentSession;
+
+  // Reconcile the timer engine. A session being started, stopped, or
+  // replaced (different startMs) means we need to re-anchor the tick and the
+  // expiry timeout in this window.
+  const sessionChanged =
+    (!!prevSession) !== (!!newSession) ||
+    (prevSession && newSession && prevSession.startMs !== newSession.startMs);
+  if (sessionChanged) {
+    clearTimerExpiry();
+    if (newSession) {
+      startTick();
+      scheduleTimerExpiry();
+    } else {
+      stopTick();
+    }
+  }
+
+  // Sync the mode tabs / track to whatever the latest mode is.
+  els.modeTrack.dataset.mode = state.mode;
+  els.modeTabs.forEach(t => t.classList.toggle('active', t.dataset.mode === state.mode));
+
+  // Update the timer-duration inputs — but only when the user isn't
+  // actively editing them and no session is running (the inputs are hidden
+  // mid-run anyway, and overwriting while a user is typing would feel
+  // hostile).
+  const ae = document.activeElement;
+  const editingDuration = ae === els.durHours || ae === els.durMinutes || ae === els.durSeconds;
+  if (!editingDuration && !state.currentSession) {
+    writeDurationToInputs(state.timerDurationMs);
+  }
+
+  // Don't clobber what the user is typing in the project field.
+  if (ae !== els.projectInput && state.lastProject) {
+    els.projectInput.value = state.lastProject;
+  }
+
+  render();
+  updateTimerDisplay();
+  updateMini();
+});
+
 // On a fresh page load with a session already in progress, the AudioContext
 // can't be created until the user has interacted. Wake it on the first click
 // or keystroke so the chime works on auto-completion without an explicit
