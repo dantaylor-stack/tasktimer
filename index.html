@@ -2985,6 +2985,12 @@ function render() {
 // ---------- Suggestions / autocomplete ----------
 let activeSuggestionIndex = -1;
 let currentSuggestions = [];
+// When true, the next showSuggestions() call ignores the input's current text
+// and shows the full project list — set on focus/click so clicking into a
+// field that already has "Niche Build" shows ALL projects (pop-out behavior),
+// rather than just the current one. Cleared as soon as the user types so
+// keystrokes filter normally.
+let projectInputShowAll = false;
 
 function buildSuggestions(query) {
   const q = query.trim().toLowerCase();
@@ -2999,7 +3005,8 @@ function buildSuggestions(query) {
 }
 
 function showSuggestions() {
-  currentSuggestions = buildSuggestions(els.projectInput.value);
+  const query = projectInputShowAll ? '' : els.projectInput.value;
+  currentSuggestions = buildSuggestions(query);
   if (currentSuggestions.length === 0) { hideSuggestions(); return; }
   activeSuggestionIndex = 0;
   els.suggestions.innerHTML = currentSuggestions.map((s, i) => {
@@ -3034,18 +3041,46 @@ function pickActiveSuggestion() {
 }
 
 // ---------- Events ----------
-els.projectInput.addEventListener('focus', showSuggestions);
-els.projectInput.addEventListener('input', showSuggestions);
-els.projectInput.addEventListener('blur', () => setTimeout(hideSuggestions, 150));
+// On focus or click, show the full project list (pop-out picker behavior).
+// Typing flips us back into filter-by-text mode.
+els.projectInput.addEventListener('focus', () => {
+  projectInputShowAll = true;
+  // Select-all so typing replaces the current project name (matches the
+  // pop-out picker, where the input is empty on open). Deferred to the next
+  // tick so the browser's own mouseup-handling doesn't collapse our
+  // selection. The user can click a second time to deselect and position
+  // the cursor if they want to edit the name instead of replacing it.
+  setTimeout(() => {
+    if (document.activeElement === els.projectInput) els.projectInput.select();
+  }, 0);
+  showSuggestions();
+});
+els.projectInput.addEventListener('click', () => {
+  // Re-clicking an already-focused field doesn't fire focus, so handle it
+  // here too. Otherwise picking → re-clicking wouldn't reopen the full list.
+  projectInputShowAll = true;
+  showSuggestions();
+});
+els.projectInput.addEventListener('input', () => {
+  projectInputShowAll = false;
+  showSuggestions();
+});
+els.projectInput.addEventListener('blur', () => {
+  setTimeout(hideSuggestions, 150);
+  projectInputShowAll = false;
+});
 els.suggestions.addEventListener('mousedown', (e) => {
   const item = e.target.closest('.suggestion');
   if (!item) return;
+  // Keep focus on the input — without preventDefault, the mousedown would
+  // blur the input and the dropdown's focus handler would race with our hide.
+  e.preventDefault();
   const i = Number(item.dataset.index);
   const pick = currentSuggestions[i];
   if (pick) {
     els.projectInput.value = pick.name;
+    projectInputShowAll = false;
     hideSuggestions();
-    els.projectInput.focus();
   }
 });
 els.projectInput.addEventListener('keydown', (e) => {
